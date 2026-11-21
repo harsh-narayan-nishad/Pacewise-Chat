@@ -240,7 +240,7 @@ function AddMembers({ conv, onDone, onError }: { conv: Conversation; onDone: (c:
         <span className="truncate text-sm text-ink-muted">{picked.size ? [...picked.values()].map((p) => p.name.split(" ")[0]).join(", ") : "Pick people to add"}</span>
         <button type="button" disabled={!picked.size || busy} onClick={() => void add()} aria-label="Add" className="glass-fab flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand text-white disabled:opacity-30">{busy ? <ButtonWheel /> : <Check className="h-5 w-5" />}</button>
       </div>
-      <p className="px-4 pb-3 text-xs text-ink-faint">New members see messages from when they join, like WhatsApp.</p>
+      <p className="px-4 pb-3 text-xs text-ink-faint">New members see messages from when they join.</p>
     </div>
   );
 }

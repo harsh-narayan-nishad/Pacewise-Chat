@@ -11,12 +11,15 @@ import { CallLayer, type CallHandle } from "@/components/CallLayer";
 import { ReportDialog } from "@/components/ReportDialog";
 import { ApiError, type User } from "@/lib/api";
 import { chatApi, streamUrl, titleOf, type ChatEvent, type Conversation, type Message } from "@/lib/chat";
-import { decryptMessage, encryptMessage, type Identity } from "@/lib/crypto";
+import { decryptMessage, encryptFile, encryptMessage, type FileMeta, type Identity } from "@/lib/crypto";
+import { fileLabel } from "@/lib/files";
 import { Keyring } from "@/lib/keyring";
 import { cn } from "@/lib/utils";
 
 /** What a message says once decrypted on this device. */
-export type Plain = { text: string } | { locked: true } | { error: true };
+/** An attachment as this device knows it (`local` = a preview of a file I am sending, before it is uploaded). */
+export type PlainFile = FileMeta & { local?: string };
+export type Plain = { text: string; file?: PlainFile } | { locked: true } | { error: true };
 export interface Thread { items: Message[]; hasMore: boolean; loaded: boolean }
 /** conversation id → user id → typing until (ms). */
 export type Typing = Record<string, Record<string, number>>;
@@ -63,7 +66,10 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
       const key = ring.get(m.conversationId, m.epoch);
       if (!key) { out[m.id] = { locked: true }; return; }
       try {
-        out[m.id] = { text: (await decryptMessage(key, { conversationId: m.conversationId, messageId: m.id, senderId: m.senderId, epoch: m.epoch }, m.iv, m.ct)).t };
+        const d = await decryptMessage(key, { conversationId: m.conversationId, messageId: m.id, senderId: m.senderId, epoch: m.epoch }, m.iv, m.ct);
+        const had = plainRef.current[m.id];
+        const local = had && "file" in had ? had.file?.local : undefined;
+        out[m.id] = { text: d.t, ...(d.f ? { file: { ...d.f, ...(local ? { local } : {}) } } : {}) };
       } catch {
         out[m.id] = { error: true };
       }
@@ -259,7 +265,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
     const sender = c?.members.find((x) => x.id === m.senderId)?.name ?? "New message";
     const title = c?.type === "group" ? `${sender} @ ${c.name}` : sender;
     try {
-      const n = new Notification(title, { body: p && "text" in p ? p.text : "New message", tag: m.conversationId });
+      const n = new Notification(title, { body: p && "text" in p ? (p.text || (p.file ? fileLabel(p.file) : "New message")) : "New message", tag: m.conversationId });
       n.onclick = () => { window.focus(); open(m.conversationId); n.close(); };
     } catch { /* not supported here */ }
   }
@@ -274,6 +280,9 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
     setConvs((cs) => cs.map((c) => (c.id === cid ? { ...c, lastMessage: m, lastMessageAt: m.createdAt } : c)).sort(byRecent));
   }, []);
 
+  /** Attachments waiting to be uploaded (by message id), and ones already uploaded (so a retry does not upload again). */
+  const pendingFiles = useRef(new Map<string, File>());
+  const uploaded = useRef(new Map<string, FileMeta>());
   const deliver = useCallback(async (cid: string, id: string, text: string, replyTo: string | null, tries = 0): Promise<void> => {
     let c = convsRef.current.find((x) => x.id === cid);
     if (!c) return;
@@ -283,9 +292,25 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
       key = ring.get(c.id, c.epoch);
     }
     if (!key) throw new Error("This chat's encryption key has not reached you yet.");
-    const sealed = await encryptMessage(key, { conversationId: c.id, messageId: id, senderId: me, epoch: c.epoch }, { t: text });
+    // An attachment: encrypted here with its own key and uploaded once (kept for a retry), then named in the message.
+    let f: FileMeta | undefined = uploaded.current.get(id);
+    const file = pendingFiles.current.get(id);
+    if (file && !f) {
+      const sealedFile = await encryptFile(await file.arrayBuffer());
+      const { fileId } = await chatApi.uploadFile(c.id, sealedFile.data);
+      f = { id: fileId, name: file.name, size: file.size, type: file.type || "application/octet-stream", key: sealedFile.key, iv: sealedFile.iv };
+      uploaded.current.set(id, f);
+    }
+    const sealed = await encryptMessage(key, { conversationId: c.id, messageId: id, senderId: me, epoch: c.epoch }, { t: text, ...(f ? { f } : {}) });
     try {
-      const saved = await chatApi.send(c.id, { id, epoch: c.epoch, ...sealed, replyTo });
+      const saved = await chatApi.send(c.id, { id, epoch: c.epoch, ...sealed, replyTo, fileId: f?.id ?? null });
+      if (f) {
+        const done = f;
+        pendingFiles.current.delete(id); uploaded.current.delete(id);
+        const mark = (p: Record<string, Plain>) => { const had = p[id]; const local = had && "file" in had ? had.file?.local : undefined; return { ...p, [id]: { text, file: { ...done, ...(local ? { local } : {}) } } }; };
+        plainRef.current = mark(plainRef.current);
+        setPlain(mark);
+      }
       upsertMessage(cid, saved);
     } catch (e) {
       if (e instanceof ApiError && e.code === "KEY_ROTATED" && tries < 2) {
@@ -296,14 +321,17 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
     }
   }, [ring, me, upsertMessage, refresh]);
 
-  const send = useCallback(async (text: string, replyTo: string | null) => {
+  const send = useCallback(async (text: string, replyTo: string | null, file?: File) => {
     const c = convsRef.current.find((x) => x.id === activeRef.current);
     if (!c) return;
     const id = crypto.randomUUID();
     lastTyping.current = 0; // the next keystroke announces "typing…" again straight away
     const draft: Message = { id, conversationId: c.id, senderId: me, kind: "text", epoch: c.epoch, iv: "", ct: "", replyTo, event: null, deleted: false, createdAt: new Date().toISOString(), status: "sending" };
-    setPlain((p) => ({ ...p, [id]: { text } }));
-    plainRef.current = { ...plainRef.current, [id]: { text } };
+    // The file stays on this device until it is uploaded: a preview straight away, and a retry if sending fails.
+    const draftFile: PlainFile | undefined = file ? { id: "", name: file.name, size: file.size, type: file.type || "application/octet-stream", key: "", iv: "", local: URL.createObjectURL(file) } : undefined;
+    if (file) pendingFiles.current.set(id, file);
+    setPlain((p) => ({ ...p, [id]: { text, ...(draftFile ? { file: draftFile } : {}) } }));
+    plainRef.current = { ...plainRef.current, [id]: { text, ...(draftFile ? { file: draftFile } : {}) } };
     upsertMessage(c.id, draft);
     try {
       await deliver(c.id, id, text, replyTo);
@@ -417,7 +445,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
 
       <section className={cn("relative h-full min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
         {active ? (
-          <ChatWindow key={active.id} onCall={() => callRef.current?.start(active)} onReport={() => setReporting(active)} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
+          <ChatWindow key={active.id} onCall={(video) => callRef.current?.start(active, video)} onReport={() => setReporting(active)} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
             onBack={() => { setActiveId(null); setInfo(false); }} onInfo={() => setInfo(true)} onSend={send} onRetry={(m) => void retry(m)} onDelete={remove} onDeleteChat={() => setDeleting(active)}
             onOlder={() => loadOlder(active.id)} onTyping={typed} onCopied={() => flash("Message copied.")} />
         ) : (

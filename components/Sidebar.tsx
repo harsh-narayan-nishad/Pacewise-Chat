@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronDown, Lock, LogOut, Moon, MoreHorizontal, Search, SquarePen, Sun, Trash2, Users, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
-import { Preview } from "@/components/bits";
+import { Preview, TypingDots } from "@/components/bits";
 import { Logo } from "@/components/Logo";
 import type { Plain, Typing } from "@/components/Messenger";
 import type { User } from "@/lib/api";
@@ -134,7 +134,7 @@ export function Sidebar(props: {
                       <span className={cn("shrink-0 text-xs", c.unread ? "text-brand" : "text-ink-faint")}>{listTime(c.lastMessageAt)}</span>
                     </span>
                     <span className="mt-0.5 flex items-center justify-between gap-2 text-sm text-ink-muted">
-                      {typingText ? <span className="truncate text-brand">{typingText}</span> : <Preview c={c} me={me} plain={props.plain} />}
+                      {typingText ? <span className="flex min-w-0 items-center gap-1.5 text-brand"><TypingDots /><span className="truncate">{typingText}</span></span> : <Preview c={c} me={me} plain={props.plain} />}
                       {c.unread > 0 && <span className="flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{c.unread > 99 ? "99+" : c.unread}</span>}
                       <span className="w-5 shrink-0" aria-hidden />
                     </span>

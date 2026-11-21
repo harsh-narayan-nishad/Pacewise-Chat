@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 export interface DeleteChoice { label: string; run: () => Promise<void> }
 
-/** WhatsApp-style "Delete …?" box: one button per choice (Delete for everyone, Delete for me), then Cancel. */
+/** "Delete …?" box: one button per choice (Delete for everyone, Delete for me), then Cancel. */
 export function DeleteDialog({ title, body, choices, onClose }: { title: string; body?: string; choices: DeleteChoice[]; onClose: () => void }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);

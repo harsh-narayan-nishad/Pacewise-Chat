@@ -1,4 +1,4 @@
-import { api, API_BASE, session } from "@/lib/api";
+import { api, API_BASE, authedFetch, session } from "@/lib/api";
 import { whenBackendChosen } from "@/lib/backend";
 import type { StoredKeys } from "@/lib/crypto";
 
@@ -53,7 +53,7 @@ export interface Conversation {
 }
 export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call"; conversationId?: string; from?: string; data?: unknown }
 /** One audio-call message between the two browsers (relayed by the server, never stored). */
-export interface CallSignal { callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy"; sdp?: string; candidate?: RTCIceCandidateInit }
+export interface CallSignal { callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy"; video?: boolean; sdp?: string; candidate?: RTCIceCandidateInit }
 export type ReportReason = "spam" | "harassment" | "inappropriate" | "impersonation" | "other";
 
 const c = (id: string) => `/chat/conversations/${encodeURIComponent(id)}`;
@@ -75,10 +75,14 @@ export const chatApi = {
   setAdmin: (id: string, userId: string, admin: boolean) => api<Conversation>(`${c(id)}/members/${encodeURIComponent(userId)}/admin`, { method: "POST", body: { admin } }),
   shareKeys: (id: string, body: { epoch: number; seed?: boolean; byPub: string; wraps: { userId: string; iv: string; data: string }[] }) => api<Conversation>(`${c(id)}/keys`, { method: "POST", body }),
   messages: (id: string, q: { before?: string; after?: string; limit?: number } = {}) => api<{ items: Message[]; hasMore: boolean }>(`${c(id)}/messages`, { query: q }),
-  send: (id: string, body: { id: string; epoch: number; iv: string; ct: string; replyTo?: string | null }) => api<Message>(`${c(id)}/messages`, { method: "POST", body }),
+  send: (id: string, body: { id: string; epoch: number; iv: string; ct: string; replyTo?: string | null; fileId?: string | null }) => api<Message>(`${c(id)}/messages`, { method: "POST", body }),
   deleteMessage: (id: string, messageId: string, scope: "me" | "everyone" = "everyone") => api<void>(`${c(id)}/messages/${encodeURIComponent(messageId)}`, { method: "DELETE", query: { scope } }),
   read: (id: string, at?: string) => api<void>(`${c(id)}/read`, { method: "POST", body: at ? { at } : {} }),
   typing: (id: string) => api<void>(`${c(id)}/typing`, { method: "POST" }),
+  /** Attachments: upload the encrypted bytes, or download them again (decrypted in lib/files.ts). */
+  uploadFile: async (id: string, data: ArrayBuffer) =>
+    (await (await authedFetch(`${c(id)}/files`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: data })).json()) as { fileId: string; size: number },
+  downloadFile: async (id: string, fileId: string) => (await authedFetch(`${c(id)}/files/${encodeURIComponent(fileId)}`)).arrayBuffer(),
   /** Audio calls: send a call message to the other person in a one-to-one chat. */
   call: (id: string, body: CallSignal) => api<void>(`${c(id)}/call`, { method: "POST", body }),
   /** Report a person (spam, harassment …): it goes to the Pacewise admins' Reports. */
@@ -157,7 +161,7 @@ export function systemText(m: Message, members: { id: string; name: string }[], 
   }
 }
 
-/** Each sender in a group gets their own name colour, like WhatsApp. */
+/** Each sender in a group gets their own name colour. */
 const NAME_COLORS = ["#E57373", "#F06292", "#BA68C8", "#9575CD", "#7986CB", "#4FC3F7", "#4DB6AC", "#81C784", "#DCE775", "#FFB74D", "#FF8A65", "#A1887F"];
 export function nameColor(id: string): string {
   let h = 0;

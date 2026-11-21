@@ -1,14 +1,16 @@
 "use client";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, Flag, Info, KeyRound, Lock, MoreHorizontal, Phone, Smile, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Paperclip, Phone, Smile, Trash2, Video, X } from "lucide-react";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import { Avatar } from "@/components/Avatar";
-import { Ticks, tickState } from "@/components/bits";
+import { Ticks, TypingDots, tickState } from "@/components/bits";
 import type { Plain, Thread } from "@/components/Messenger";
 import { ButtonWheel } from "@/components/WheelSpinner";
 import { clockOf, dayChip, nameColor, nameOf, otherOf, presenceLabel, sameDay, systemText, titleOf, type Conversation, type Message } from "@/lib/chat";
 import { cn } from "@/lib/utils";
+import { fileLabel, fileUrl, isImage, kindLabel, MAX_FILE_BYTES, saveFile, sizeLabel } from "@/lib/files";
+import type { PlainFile } from "@/components/Messenger";
 
 const EMOJI = "😀 😂 🤣 😊 😍 🥰 😘 😎 🤩 🥳 😇 🙂 😉 😌 🤔 🤗 😅 😴 🥲 😢 😭 😤 😡 😱 🙏 👍 👎 👏 🙌 👋 💪 🤝 ✌️ 👌 ❤️ 🧡 💛 💚 💙 💜 🔥 ✨ 🎉 💯 ✅ ❌ 📚 📖 ✍️ 🧠 ⏰ ☕".split(" ");
 const URL_RX = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g;
@@ -25,10 +27,10 @@ function Linked({ text, onBrand = false }: { text: string; onBrand?: boolean }) 
  */
 export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, onInfo, onSend, onRetry, onDelete, onDeleteChat, onOlder, onTyping, onCopied, onCall, onReport }: {
   conv: Conversation; me: string; thread: Thread | undefined; plain: Record<string, Plain>; typing: Record<string, number>; hasKey: boolean;
-  onBack: () => void; onInfo: () => void; onSend: (text: string, replyTo: string | null) => Promise<void>; onRetry: (m: Message) => void; onDelete: (m: Message, scope: "me" | "everyone") => Promise<void>; onDeleteChat: () => void;
+  onBack: () => void; onInfo: () => void; onSend: (text: string, replyTo: string | null, file?: File) => Promise<void>; onRetry: (m: Message) => void; onDelete: (m: Message, scope: "me" | "everyone") => Promise<void>; onDeleteChat: () => void;
   onOlder: () => Promise<void>; onTyping: () => void; onCopied: () => void;
   /** Audio call (one-to-one chats) and Report spam. */
-  onCall?: () => void; onReport?: () => void;
+  onCall?: (video: boolean) => void; onReport?: () => void;
 }) {
   const other = otherOf(conv, me);
   const isGroup = conv.type === "group";
@@ -41,6 +43,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
   const [menu, setMenu] = useState<{ m: Message; x: number; y: number } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [headMenu, setHeadMenu] = useState(false);
+  const [callMenu, setCallMenu] = useState(false);
   const [delMsg, setDelMsg] = useState<Message | null>(null);
   const first = useRef(true);
   const lastCount = useRef(0);
@@ -107,7 +110,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
   const textOf = (m: Message) => {
     if (m.deleted) return "This message was deleted";
     const p = plain[m.id];
-    return p && "text" in p ? p.text : "Encrypted message";
+    return p && "text" in p ? (p.text || (p.file ? fileLabel(p.file) : "")) : "Encrypted message";
   };
 
   const waitingFor = !isGroup && other && other.id !== me && !other.publicKey ? other.name.split(" ")[0] : null;
@@ -120,11 +123,27 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
           <Avatar id={isGroup ? conv.id : other?.id ?? conv.id} name={titleOf(conv, me)} url={other?.avatarUrl} group={isGroup} size={40} />
           <span className="min-w-0">
             <span className="block truncate text-[16px] font-semibold text-ink">{titleOf(conv, me)}</span>
-            <span className={cn("block truncate text-xs", live ? "text-brand" : "text-ink-muted")}>{subtitle}</span>
+            <span className={cn("flex min-w-0 items-center gap-1.5 text-xs", live ? "text-brand" : "text-ink-muted")}>
+              {typers.length > 0 && <TypingDots />}
+              <span className="truncate">{subtitle}</span>
+            </span>
           </span>
         </button>
         {!isGroup && !self && onCall && (
-          <button type="button" onClick={onCall} aria-label={`Audio call ${titleOf(conv, me)}`} title="Audio call" className="flex h-10 w-10 items-center justify-center rounded-full text-brand hover:bg-brand/10"><Phone className="h-[22px] w-[22px]" strokeWidth={2} /></button>
+          <div className="relative">
+            {/* the call button opens a small menu: audio or video */}
+            <button type="button" onClick={() => setCallMenu((v) => !v)} aria-label={`Call ${titleOf(conv, me)}`} aria-haspopup="menu" aria-expanded={callMenu} title="Call"
+              className="flex h-10 items-center gap-0.5 rounded-full px-2 text-brand hover:bg-brand/10"><Phone className="h-[22px] w-[22px]" strokeWidth={2} /><ChevronDown className={cn("h-3.5 w-3.5 transition-transform", callMenu && "rotate-180")} strokeWidth={2.5} /></button>
+            {callMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setCallMenu(false)} aria-hidden />
+                <div role="menu" className="pw-menu glass-in absolute right-0 top-11 z-50 w-52 overflow-hidden py-1.5">
+                  <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] text-ink hover:bg-overlay/[0.06]"><Phone className="h-[18px] w-[18px] text-brand" /> Audio call</button>
+                  <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(true); }} className="flex w-full items-center gap-3 border-t border-overlay/10 px-4 py-2.5 text-left text-[15px] text-ink hover:bg-overlay/[0.06]"><Video className="h-[18px] w-[18px] text-brand" /> Video call</button>
+                </div>
+              </>
+            )}
+          </div>
         )}
         <div className="relative">
           <button type="button" onClick={() => setHeadMenu((v) => !v)} aria-label="Chat menu" aria-expanded={headMenu} className="flex h-10 w-10 items-center justify-center rounded-full text-brand hover:bg-brand/10"><MoreHorizontal className="h-6 w-6" strokeWidth={2.25} /></button>
@@ -182,12 +201,14 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                         <span className={cn("line-clamp-2 block text-xs", mine ? "text-white/80" : "text-ink-muted")}>{textOf(quoted)}</span>
                       </button>
                     )}
-                    {/* on touch screens the ⌄ options button is always shown: keep the text clear of it */}
-                    <div className="whitespace-pre-wrap break-words px-1 [@media(hover:none)]:pr-6">
+                    <div className="whitespace-pre-wrap break-words px-1">
                       {m.deleted ? (
                         <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><Ban className="h-4 w-4" />{mine ? "You deleted this message" : "This message was deleted"}</span>
                       ) : p && "text" in p ? (
-                        <Linked text={p.text} onBrand={mine} />
+                        <>
+                          {p.file && <Attachment file={p.file} conversationId={conv.id} mine={mine} sending={m.status === "sending"} />}
+                          {p.text ? <Linked text={p.text} onBrand={mine} /> : null}
+                        </>
                       ) : p && "error" in p ? (
                         <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><AlertCircle className="h-4 w-4" />Couldn&apos;t decrypt this message</span>
                       ) : (
@@ -203,7 +224,11 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                     </span>
                     {(
                       <button type="button" aria-label="Message options" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ m, x: r.left, y: r.bottom }); }}
-                        className={cn("absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-60", mine ? "bg-white/20 text-white" : "bg-overlay/10 text-ink-muted")}>
+                        className={cn("absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
+                          mine ? "bg-white/20 text-white" : "bg-overlay/10 text-ink-muted",
+                          // touch screens: always shown, just outside the bubble (so it never covers text or the time)
+                          "[@media(hover:none)]:top-1/2 [@media(hover:none)]:-translate-y-1/2 [@media(hover:none)]:bg-overlay/10 [@media(hover:none)]:text-ink-muted [@media(hover:none)]:opacity-70",
+                          mine ? "[@media(hover:none)]:-left-8 [@media(hover:none)]:right-auto" : "[@media(hover:none)]:-right-8")}>
                         <ChevronDown className="h-4 w-4" />
                       </button>
                     )}
@@ -215,7 +240,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
           })}
           {typers.length > 0 && (
             <div className="mt-2 flex justify-start"><span className="bubble-theirs flex items-center gap-1 rounded-[20px] rounded-bl-[7px] px-3.5 py-3" aria-label="typing">
-              {[0, 1, 2].map((d) => <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-muted" style={{ animationDelay: `${d * 0.15}s` }} />)}
+              <TypingDots className="gap-1 text-ink-muted [&>span]:h-2 [&>span]:w-2" />
             </span></div>
           )}
         </div>
@@ -239,10 +264,10 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
 
       <Composer key={conv.id} disabled={!hasKey} reply={reply} replyName={reply ? nameOf(conv.members, reply.senderId, me) : ""} replyText={reply ? textOf(reply) : ""}
         onCancelReply={() => setReply(null)} onTyping={onTyping}
-        onSend={async (t) => { const r = reply?.id ?? null; setReply(null); await onSend(t, r); requestAnimationFrame(() => toBottom(true)); }} />
+        onSend={async (t, f) => { const r = reply?.id ?? null; setReply(null); await onSend(t, r, f); requestAnimationFrame(() => toBottom(true)); }} />
 
       {menu && (
-        <MessageMenu x={menu.x} y={menu.y} deleted={menu.m.deleted} canCopy={!!plain[menu.m.id] && "text" in (plain[menu.m.id] as object)} onClose={() => setMenu(null)}
+        <MessageMenu x={menu.x} y={menu.y} deleted={menu.m.deleted} canCopy={(() => { const p = plain[menu.m.id]; return !!p && "text" in p && !!p.text; })()} onClose={() => setMenu(null)}
           onReply={() => { setReply(menu.m); setMenu(null); }}
           onCopy={() => { const p = plain[menu.m.id]; if (p && "text" in p) void navigator.clipboard?.writeText(p.text).then(onCopied, () => undefined); setMenu(null); }}
           onDelete={() => { setDelMsg(menu.m); setMenu(null); }} />
@@ -288,9 +313,21 @@ function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onDelet
 
 /** Type, Enter to send (Shift+Enter for a new line), emoji, and the message being replied to. */
 function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend, onTyping }: {
-  disabled: boolean; reply: Message | null; replyName: string; replyText: string; onCancelReply: () => void; onSend: (text: string) => Promise<void>; onTyping: () => void;
+  disabled: boolean; reply: Message | null; replyName: string; replyText: string; onCancelReply: () => void; onSend: (text: string, file?: File) => Promise<void>; onTyping: () => void;
 }) {
   const [text, setText] = useState("");
+  /** A file picked to send (any type, up to 25 MB), shown above the field until it is sent. */
+  const [attached, setAttached] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const pick = (f: File | undefined) => {
+    if (!f) return;
+    if (f.size > MAX_FILE_BYTES) { setFileError(`"${f.name}" is ${sizeLabel(f.size)}. Files can be up to 25 MB.`); return; }
+    if (f.size === 0) { setFileError(`"${f.name}" is empty.`); return; }
+    setFileError(null);
+    setAttached(f);
+    area.current?.focus();
+  };
   const [emoji, setEmoji] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
@@ -311,10 +348,12 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
 
   const submit = () => {
     const t = text.trim();
-    if (!t || disabled) return;
+    if ((!t && !attached) || disabled) return;
     if (t.length > 4000) return;
     setText("");
-    void onSend(t);
+    const f = attached ?? undefined;
+    setAttached(null);
+    void onSend(t, f);
     area.current?.focus();
   };
   const insert = (e: string) => {
@@ -327,6 +366,17 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
 
   return (
     <div className="pw-bar shrink-0 border-t border-overlay/10 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-4">
+      {attached && (
+        <div className="mb-2 flex items-center gap-3 rounded-2xl bg-brand/[0.07] p-2.5">
+          {isImage(attached.type) ? <LocalThumb file={attached} /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><FileText className="h-5 w-5" /></span>}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-medium text-ink">{attached.name}</span>
+            <span className="block text-xs text-ink-muted">{kindLabel(attached.name, attached.type)} · {sizeLabel(attached.size)} · end-to-end encrypted</span>
+          </span>
+          <button type="button" onClick={() => setAttached(null)} aria-label="Remove attachment" className="text-ink-muted"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+      {fileError && <p className="mb-2 px-1 text-xs text-accent-extreme" role="alert">{fileError}</p>}
       {reply && (
         <div className="mb-2 flex items-start gap-2 rounded-2xl bg-brand/[0.07] p-2.5">
           <div className="min-w-0 flex-1 border-l-[3px] pl-2.5" style={{ borderColor: nameColor(reply.senderId) }}>
@@ -347,6 +397,10 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
             </div>
           )}
         </div>
+        {/* attach any file */}
+        <button type="button" onClick={() => picker.current?.click()} disabled={disabled} aria-label="Attach a file" title="Attach a file"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:text-brand disabled:opacity-40"><Paperclip className="h-[21px] w-[21px]" /></button>
+        <input ref={picker} type="file" className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
         <label className="flex min-h-[36px] flex-1 items-center py-1.5">
           <span className="sr-only">Message</span>
           <textarea ref={area} value={text} rows={1} disabled={disabled} maxLength={4000}
@@ -356,9 +410,68 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
             className="thin-scroll max-h-[140px] w-full resize-none bg-transparent text-[16px] leading-6 text-ink outline-none placeholder:text-ink-faint disabled:opacity-60" />
         </label>
         </div>
-        <button type="button" onClick={submit} disabled={disabled || !text.trim()} aria-label="Send"
+        <button type="button" onClick={submit} disabled={disabled || (!text.trim() && !attached)} aria-label="Send"
           className="glass-fab flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] disabled:opacity-35 disabled:shadow-none"><ArrowUp className="h-5 w-5" strokeWidth={2.5} /></button>
       </div>
     </div>
+  );
+}
+
+/** A preview of a picked image, before it is sent. */
+function LocalThumb({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
+  // eslint-disable-next-line @next/next/no-img-element
+  return url ? <img src={url} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" /> : <span className="h-11 w-11 shrink-0 rounded-xl bg-overlay/10" />;
+}
+
+/**
+ * An attachment in a bubble. Images show inline (downloaded and decrypted here, on this device); any other file is a
+ * card with its name, kind and size that decrypts and saves on tap.
+ */
+function Attachment({ file, conversationId, mine, sending }: { file: PlainFile; conversationId: string; mine: boolean; sending: boolean }) {
+  const [url, setUrl] = useState<string | null>(file.local ?? null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const image = isImage(file.type);
+  useEffect(() => {
+    if (!image || file.local || !file.id) return;
+    let live = true;
+    fileUrl(conversationId, file).then((u) => { if (live) setUrl(u); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [image, file, conversationId]);
+
+  const open = async () => {
+    if (!file.id || busy) return;
+    setBusy(true); setFailed(false);
+    try { await saveFile(conversationId, file); } catch { setFailed(true); } finally { setBusy(false); }
+  };
+
+  if (image) {
+    return (
+      <button type="button" onClick={() => void open()} disabled={!file.id} aria-label={`Save ${file.name}`} className="mb-1.5 block w-fit overflow-hidden rounded-[14px]">
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt={file.name} className={cn("block h-auto max-h-72 w-auto max-w-[260px] object-cover", sending && "opacity-70")} />
+        ) : (
+          <span className={cn("flex h-40 w-[240px] items-center justify-center text-xs", mine ? "bg-white/15 text-white/80" : "bg-overlay/[0.06] text-ink-muted")}>
+            {failed ? "Couldn't load this photo" : <ButtonWheel size={18} />}
+          </span>
+        )}
+      </button>
+    );
+  }
+  return (
+    <button type="button" onClick={() => void open()} disabled={!file.id || busy} aria-label={`Save ${file.name}`}
+      className={cn("mb-1.5 flex w-full min-w-[220px] max-w-[300px] items-center gap-3 rounded-[14px] p-2.5 text-left", mine ? "bg-white/15" : "bg-brand/[0.07]")}>
+      <span className={cn("flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl text-[9px] font-bold tracking-wide", mine ? "bg-white text-brand" : "bg-brand text-white")}>
+        <FileText className="h-[18px] w-[18px]" />{kindLabel(file.name, file.type)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn("block truncate text-[14px] font-medium", mine ? "text-white" : "text-ink")}>{file.name}</span>
+        <span className={cn("block text-xs", mine ? "text-white/75" : "text-ink-muted")}>{sending ? "Encrypting and sending…" : failed ? "Couldn't download. Tap to retry" : sizeLabel(file.size)}</span>
+      </span>
+      {file.id && <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", mine ? "bg-white/20 text-white" : "bg-brand/10 text-brand")}>{busy ? <ButtonWheel size={14} /> : <ArrowDown className="h-4 w-4" strokeWidth={2.25} />}</span>}
+    </button>
   );
 }

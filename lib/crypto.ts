@@ -110,7 +110,9 @@ function messageKey(raw: Bytes): Promise<CryptoKey> {
 export interface MessageMeta { conversationId: string; messageId: string; senderId: string; epoch: number }
 const aad = (m: MessageMeta) => te.encode(`pacewise-chat/msg/v1|${m.conversationId}|${m.messageId}|${m.senderId}|${m.epoch}`);
 
-export interface Payload { t: string }
+/** An attachment: where it is stored, what it is, and the key that opens it (only ever inside the encrypted message). */
+export interface FileMeta { id: string; name: string; size: number; type: string; key: string; iv: string }
+export interface Payload { t: string; f?: FileMeta }
 
 export async function encryptMessage(raw: Bytes, meta: MessageMeta, payload: Payload) {
   const iv = random(12);
@@ -121,12 +123,28 @@ export async function encryptMessage(raw: Bytes, meta: MessageMeta, payload: Pay
 export async function decryptMessage(raw: Bytes, meta: MessageMeta, iv: string, ct: string): Promise<Payload> {
   const pt = await subtle().decrypt({ name: "AES-GCM", iv: fromB64(iv), additionalData: aad(meta) }, await messageKey(raw), fromB64(ct));
   const p = JSON.parse(td.decode(pt)) as Partial<Payload>;
-  return { t: typeof p.t === "string" ? p.t : "" };
+  const f = p.f;
+  const file = f && typeof f.id === "string" && typeof f.key === "string" && typeof f.iv === "string" && typeof f.name === "string"
+    ? { id: f.id, name: f.name.slice(0, 255), size: Number(f.size) || 0, type: typeof f.type === "string" ? f.type : "application/octet-stream", key: f.key, iv: f.iv } : undefined;
+  return { t: typeof p.t === "string" ? p.t : "", ...(file ? { f: file } : {}) };
+}
+
+/** Encrypts a file with its own new key (AES-256-GCM); the key and iv go inside the message. */
+export async function encryptFile(bytes: ArrayBuffer): Promise<{ data: ArrayBuffer; key: string; iv: string }> {
+  const raw = random(32);
+  const iv = random(12);
+  const k = await subtle().importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt"]);
+  const data = await subtle().encrypt({ name: "AES-GCM", iv }, k, bytes);
+  return { data, key: toB64(raw), iv: toB64(iv) };
+}
+export async function decryptFile(data: ArrayBuffer, key: string, iv: string): Promise<ArrayBuffer> {
+  const k = await subtle().importKey("raw", fromB64(key), { name: "AES-GCM" }, false, ["decrypt"]);
+  return subtle().decrypt({ name: "AES-GCM", iv: fromB64(iv) }, k, data);
 }
 
 /**
  * The security code two people can compare (in person, or over a call) to be sure no one swapped a key in between,
- * like WhatsApp's "Verify security code": 60 digits in 12 groups of 5, the same on both sides.
+ * 60 digits in 12 groups of 5, the same on both sides.
  */
 export async function securityCode(pubA: string, pubB: string): Promise<string[]> {
   const [a, b] = [pubA, pubB].sort();

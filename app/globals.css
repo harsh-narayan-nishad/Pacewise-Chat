@@ -94,7 +94,7 @@ html, body {
 /* =====================================================================
    Pacewise Chat design: Pacewise blue, gradient "pace" bubbles without tails that stack like a conversation,
    a calm grouped background with a faint brand glow, frosted bars, pill chips and solid rounded menus
-   (Apple-style, like Pacewise To-do; ideas from Telegram and Signal).
+   (the Pacewise design, as in Pacewise To-do).
    ===================================================================== */
 :root, :root[data-theme="dark"] {
   --brand: 64 140 255; --tick-read: 64 140 255;
@@ -121,19 +121,19 @@ html, body {
 .pw-chip { background: rgb(var(--canvas-raised) / 0.82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
 :root[data-theme="light"] .pw-chip { background: rgba(255, 255, 255, 0.85); }
 /* solid rounded menus */
-.pw-menu { background: rgb(44, 44, 46); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.08); }
+.pw-menu { background: rgb(42, 43, 48); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.08); }
 :root[data-theme="light"] .pw-menu { background: #fff; box-shadow: 0 12px 40px rgba(20, 20, 20, 0.16), 0 0 0 0.5px rgba(20, 20, 20, 0.08); }
 /* the message field, the search field, round floating buttons */
 .pw-field { background: rgb(38, 39, 43); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
-:root[data-theme="light"] .pw-field { background: #fff; box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.16); }
-.pw-search { background: rgba(118, 118, 128, 0.24); }
-:root[data-theme="light"] .pw-search { background: rgba(118, 118, 128, 0.12); }
-.pw-float { background: rgb(44, 44, 46); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); }
+:root[data-theme="light"] .pw-field { background: #fff; box-shadow: inset 0 0 0 1px rgba(62, 64, 72, 0.16); }
+.pw-search { background: rgba(120, 122, 132, 0.24); }
+:root[data-theme="light"] .pw-search { background: rgba(120, 122, 132, 0.12); }
+.pw-float { background: rgb(42, 43, 48); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); }
 :root[data-theme="light"] .pw-float { background: #fff; box-shadow: 0 4px 16px rgba(20, 20, 20, 0.14); }
 /* segmented control (chat filters) */
-.pw-seg { background: rgba(118, 118, 128, 0.24); }
-.pw-seg-on { background: rgb(99, 99, 102); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
-:root[data-theme="light"] .pw-seg { background: rgba(118, 118, 128, 0.12); }
+.pw-seg { background: rgba(120, 122, 132, 0.24); }
+.pw-seg-on { background: rgb(96, 98, 104); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+:root[data-theme="light"] .pw-seg { background: rgba(120, 122, 132, 0.12); }
 :root[data-theme="light"] .pw-seg-on { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); }
 /* a message that was jumped to (from a reply) flashes once */
 @keyframes flash { 0%, 100% { filter: none; } 30% { filter: brightness(1.35); } }
@@ -153,3 +153,7 @@ html, body {
 @keyframes pw-call-ring { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.75); opacity: 0; } }
 .pw-call-ring { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); animation: pw-call-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .pw-call-ring { animation: none; opacity: 0; } }
+/* "typing…": three dots in a soft wave */
+@keyframes pw-typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-3px); opacity: 1; } }
+.pw-typing-dot { animation: pw-typing 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pw-typing-dot { animation: none; opacity: 0.8; } }

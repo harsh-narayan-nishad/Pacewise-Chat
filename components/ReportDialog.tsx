@@ -57,7 +57,7 @@ export function ReportDialog({ conv, me, recentFrom, onClose, onDone, onDeleteCh
       onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="pw-menu glass-in flex max-h-[88dvh] w-full max-w-md flex-col overflow-hidden">
         <div className="thin-scroll overflow-y-auto p-5">
-          <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#FF3B30]/12 text-[#FF3B30]"><Flag className="h-5 w-5" /></span>
+          <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#F2453D]/12 text-[#F2453D]"><Flag className="h-5 w-5" /></span>
           <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-ink">{person ? `Report ${person.name}` : `Report someone in ${titleOf(conv, me)}`}</h2>
           <p className="mt-1 text-[14px] leading-snug text-ink-muted">The Pacewise team reviews every report. {person?.name.split(" ")[0] ?? "They"} won&apos;t be told who reported them.</p>
 
@@ -110,7 +110,7 @@ export function ReportDialog({ conv, me, recentFrom, onClose, onDone, onDeleteCh
         </div>
         <div className="flex gap-2 border-t border-overlay/10 p-3">
           <button type="button" onClick={onClose} disabled={busy} className="h-11 flex-1 rounded-full bg-overlay/[0.08] text-[15px] font-medium text-ink disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={() => void submit()} disabled={!person || busy} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#FF3B30] text-[15px] font-semibold text-white disabled:opacity-40">
+          <button type="button" onClick={() => void submit()} disabled={!person || busy} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#F2453D] text-[15px] font-semibold text-white disabled:opacity-40">
             {busy && <ButtonWheel />}{busy ? "Sending…" : "Report"}
           </button>
         </div>

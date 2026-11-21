@@ -47,6 +47,22 @@ function refreshSession(): Promise<boolean> {
   return refreshing;
 }
 
+/** A signed-in request that sends or receives raw bytes (encrypted attachments); refreshes the session once on 401. */
+export async function authedFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
+  await whenBackendChosen();
+  const s = session.get();
+  const headers = new Headers(init.headers);
+  if (s) headers.set("Authorization", `Bearer ${s.accessToken}`);
+  let res: Response;
+  try { res = await fetch(url(path), { ...init, headers }); } catch { throw new ApiError(0, "Cannot reach the server. Check your connection.", "NETWORK"); }
+  if (res.status === 401 && !retried && (await refreshSession())) return authedFetch(path, init, true);
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { message?: string; error?: { message?: string; code?: string } };
+    throw new ApiError(res.status, data.error?.message ?? data.message ?? `Request failed (${res.status})`, data.error?.code);
+  }
+  return res;
+}
+
 export async function api<T>(path: string, opts: Options = {}, retried = false): Promise<T> {
   if (!API_BASE) throw new ApiError(0, "NEXT_PUBLIC_API_URL is not set. Copy .env.local.example to .env.local and restart.", "API_DISABLED");
   await whenBackendChosen();
