@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Ban, Check, LogOut, Lock, MessageSquare, Pencil, ShieldCheck, ShieldOff, Trash2, UserMinus, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Ban, Check, Flag, LogOut, Lock, MessageSquare, Pencil, ShieldCheck, ShieldOff, Trash2, UserMinus, UserPlus, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { PeoplePicker } from "@/components/NewChat";
 import { ConfirmDialog } from "@/components/ui";
@@ -13,9 +13,11 @@ type View = { kind: "main" } | { kind: "verify"; member: Member } | { kind: "add
 type Confirm = { title: string; body: string; label: string; run: () => Promise<void> };
 
 /** Contact info / group info: who, encryption (verify security code), members and admins, clear / delete / exit. */
-export function InfoPanel({ conv, me, identity, onClose, onMessage, onChanged, onError, onDeleteChat }: {
+export function InfoPanel({ conv, me, identity, onClose, onMessage, onChanged, onError, onDeleteChat, onReport }: {
   conv: Conversation; me: string; identity: Identity; onClose: () => void; onMessage: (userId: string) => void;
   onChanged: (c: Conversation | null | undefined, reloadMessages?: boolean) => Promise<void>; onError: (m: string) => void; onDeleteChat: () => void;
+  /** Report spam (opens the report form). */
+  onReport?: () => void;
 }) {
   const [view, setView] = useState<View>({ kind: "main" });
   const [confirm, setConfirm] = useState<Confirm | null>(null);
@@ -75,6 +77,13 @@ export function InfoPanel({ conv, me, identity, onClose, onMessage, onChanged, o
             </section>
           )}
 
+          {onReport && !(other && other.id === me && !isGroup) && (
+            <section className="mt-2 border-t border-overlay/10 py-2">
+              <Row icon={Flag} title={isGroup ? "Report spam" : `Report ${other?.name.split(" ")[0] ?? "spam"}`} danger
+                sub={isGroup ? "Report a member to the Pacewise team" : "Spam, harassment or a fake account? Tell the Pacewise team"} onClick={onReport} />
+            </section>
+          )}
+
           <section className="mt-2 border-t border-overlay/10 py-2">
             <Row icon={Ban} title="Clear chat" danger onClick={() => setConfirm({ title: "Clear this chat?", body: "Messages are removed from this chat for you only. Others still see them.", label: "Clear chat", run: () => act(() => chatApi.clear(conv.id), true) })} />
             {isGroup && (
@@ -93,7 +102,7 @@ export function InfoPanel({ conv, me, identity, onClose, onMessage, onChanged, o
 function Row({ icon: Icon, title, sub, onClick, danger, accent }: { icon: typeof Lock; title: string; sub?: string; onClick?: () => void; danger?: boolean; accent?: boolean }) {
   const inner = (
     <>
-      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full", accent ? "bg-brand text-canvas" : "text-ink-muted", danger && "text-accent-extreme")}><Icon className="h-5 w-5" /></span>
+      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full", accent ? "bg-brand text-white" : "text-ink-muted", danger && "text-accent-extreme")}><Icon className="h-5 w-5" /></span>
       <span className="min-w-0 flex-1">
         <span className={cn("block text-[15px]", danger ? "text-accent-extreme" : "text-ink")}>{title}</span>
         {sub && <span className="block text-xs text-ink-muted">{sub}</span>}
@@ -229,7 +238,7 @@ function AddMembers({ conv, onDone, onError }: { conv: Conversation; onDone: (c:
       <PeoplePicker exclude={conv.members.map((m) => m.id)} selected={picked} onToggle={toggle} />
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-overlay/10 px-4 py-3">
         <span className="truncate text-sm text-ink-muted">{picked.size ? [...picked.values()].map((p) => p.name.split(" ")[0]).join(", ") : "Pick people to add"}</span>
-        <button type="button" disabled={!picked.size || busy} onClick={() => void add()} aria-label="Add" className="glass-fab flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand text-canvas disabled:opacity-30">{busy ? <ButtonWheel /> : <Check className="h-5 w-5" />}</button>
+        <button type="button" disabled={!picked.size || busy} onClick={() => void add()} aria-label="Add" className="glass-fab flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand text-white disabled:opacity-30">{busy ? <ButtonWheel /> : <Check className="h-5 w-5" />}</button>
       </div>
       <p className="px-4 pb-3 text-xs text-ink-faint">New members see messages from when they join, like WhatsApp.</p>
     </div>

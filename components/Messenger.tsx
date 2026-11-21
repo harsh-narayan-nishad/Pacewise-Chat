@@ -7,6 +7,8 @@ import { ChatWindow } from "@/components/ChatWindow";
 import { InfoPanel } from "@/components/InfoPanel";
 import { Logo } from "@/components/Logo";
 import { DeleteDialog, type DeleteChoice } from "@/components/DeleteDialog";
+import { CallLayer, type CallHandle } from "@/components/CallLayer";
+import { ReportDialog } from "@/components/ReportDialog";
 import { ApiError, type User } from "@/lib/api";
 import { chatApi, streamUrl, titleOf, type ChatEvent, type Conversation, type Message } from "@/lib/chat";
 import { decryptMessage, encryptMessage, type Identity } from "@/lib/crypto";
@@ -153,7 +155,16 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
   }, [openThread]);
 
   // ---- live events ----
+  /** Audio calls (one-to-one chats) and reporting spam. */
+  const callRef = useRef<CallHandle>(null);
+  const [reporting, setReporting] = useState<Conversation | null>(null);
+  /** The last few messages someone sent in a chat (decrypted here), which the reporter may choose to include. */
+  const recentFrom = useCallback((cid: string, userId: string) => (threadsRef.current[cid]?.items ?? [])
+    .filter((m) => m.senderId === userId && m.kind === "text" && !m.deleted)
+    .map((m) => plainRef.current[m.id]).filter((p): p is { text: string } => !!p && "text" in p).map((p) => p.text).slice(-5), []);
+
   const handle = useCallback((e: ChatEvent) => {
+    if (e.type === "call") { callRef.current?.signal(e); return; }
     const cid = e.conversationId;
     if (e.type === "typing" && cid && e.from) {
       setTyping((t) => ({ ...t, [cid]: { ...(t[cid] ?? {}), [e.from!]: Date.now() + 5000 } }));
@@ -406,7 +417,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
 
       <section className={cn("relative h-full min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
         {active ? (
-          <ChatWindow key={active.id} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
+          <ChatWindow key={active.id} onCall={() => callRef.current?.start(active)} onReport={() => setReporting(active)} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
             onBack={() => { setActiveId(null); setInfo(false); }} onInfo={() => setInfo(true)} onSend={send} onRetry={(m) => void retry(m)} onDelete={remove} onDeleteChat={() => setDeleting(active)}
             onOlder={() => loadOlder(active.id)} onTyping={typed} onCopied={() => flash("Message copied.")} />
         ) : (
@@ -419,10 +430,12 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
       </section>
 
       {info && active && (
-        <InfoPanel conv={active} me={me} identity={identity} onClose={() => setInfo(false)} onMessage={(id) => { setInfo(false); void startDirect(id); }} onChanged={changed} onError={flash} onDeleteChat={() => setDeleting(active)} />
+        <InfoPanel conv={active} me={me} identity={identity} onClose={() => setInfo(false)} onMessage={(id) => { setInfo(false); void startDirect(id); }} onChanged={changed} onError={flash} onDeleteChat={() => setDeleting(active)} onReport={() => setReporting(active)} />
       )}
 
       {deleting && <DeleteDialog {...deleteChoices(deleting)} onClose={() => setDeleting(null)} />}
+      {reporting && <ReportDialog conv={reporting} me={me} recentFrom={(u) => recentFrom(reporting.id, u)} onClose={() => setReporting(null)} onDone={flash} onDeleteChat={() => removeChat(reporting, "me")} />}
+      <CallLayer ref={callRef} me={me} convs={() => convsRef.current} onError={flash} />
       {toast && (
         <div role="status" className="glass-in fixed bottom-6 left-1/2 z-[150] -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-sm text-canvas shadow-themed">{toast}</div>
       )}

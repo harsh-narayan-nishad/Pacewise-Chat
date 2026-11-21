@@ -92,19 +92,49 @@ html, body {
 }
 
 /* =====================================================================
-   Pacewise Chat: message bubbles, the chat wallpaper and read ticks (WhatsApp-like, in Pacewise colours).
+   Pacewise Chat design: Pacewise blue, gradient "pace" bubbles without tails that stack like a conversation,
+   a calm grouped background with a faint brand glow, frosted bars, pill chips and solid rounded menus
+   (Apple-style, like Pacewise To-do; ideas from Telegram and Signal).
    ===================================================================== */
 :root, :root[data-theme="dark"] {
-  --bubble-out: 0 92 75; --bubble-in: 32 34 38; --chat-bg: 14 15 17; --tick-read: 83 189 235; --brand: 37 211 102;
+  --brand: 64 140 255; --tick-read: 64 140 255;
+  --bubble-out: 52 120 246; --bubble-in: 38 39 43; --chat-bg: 11 12 14;
 }
 :root[data-theme="light"] {
-  --bubble-out: 217 253 211; --bubble-in: 255 255 255; --chat-bg: 239 234 226; --tick-read: 39 146 226; --brand: 0 168 132;
+  --brand: 52 120 246; --tick-read: 52 120 246;
+  --bubble-out: 52 120 246; --bubble-in: 255 255 255; --chat-bg: 242 242 247;
 }
 .chat-wallpaper {
   background-color: rgb(var(--chat-bg));
-  background-image: radial-gradient(rgb(var(--overlay) / 0.035) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-image:
+    radial-gradient(900px 520px at 100% 0%, rgb(var(--brand) / 0.09), transparent 60%),
+    radial-gradient(800px 480px at 0% 100%, rgb(124 92 255 / 0.07), transparent 62%);
+  background-attachment: local;
 }
+/* my messages: the Pacewise blue, with a soft "pace" gradient */
+.bubble-mine { background: linear-gradient(160deg, #4C8DFF 0%, #3478F6 55%, #3D5AFE 100%); color: #fff; box-shadow: 0 1px 2px rgba(20, 40, 120, 0.18); }
+.bubble-theirs { background: rgb(var(--bubble-in)); box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.08); }
+:root[data-theme="dark"] .bubble-theirs { box-shadow: none; }
+/* frosted header / composer bars */
+.pw-bar { background: rgb(var(--canvas) / 0.86); -webkit-backdrop-filter: saturate(180%) blur(18px); backdrop-filter: saturate(180%) blur(18px); }
+/* day chips and group events: small frosted pills */
+.pw-chip { background: rgb(var(--canvas-raised) / 0.82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+:root[data-theme="light"] .pw-chip { background: rgba(255, 255, 255, 0.85); }
+/* solid rounded menus */
+.pw-menu { background: rgb(44, 44, 46); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.08); }
+:root[data-theme="light"] .pw-menu { background: #fff; box-shadow: 0 12px 40px rgba(20, 20, 20, 0.16), 0 0 0 0.5px rgba(20, 20, 20, 0.08); }
+/* the message field, the search field, round floating buttons */
+.pw-field { background: rgb(38, 39, 43); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+:root[data-theme="light"] .pw-field { background: #fff; box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.16); }
+.pw-search { background: rgba(118, 118, 128, 0.24); }
+:root[data-theme="light"] .pw-search { background: rgba(118, 118, 128, 0.12); }
+.pw-float { background: rgb(44, 44, 46); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); }
+:root[data-theme="light"] .pw-float { background: #fff; box-shadow: 0 4px 16px rgba(20, 20, 20, 0.14); }
+/* segmented control (chat filters) */
+.pw-seg { background: rgba(118, 118, 128, 0.24); }
+.pw-seg-on { background: rgb(99, 99, 102); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+:root[data-theme="light"] .pw-seg { background: rgba(118, 118, 128, 0.12); }
+:root[data-theme="light"] .pw-seg-on { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); }
 /* a message that was jumped to (from a reply) flashes once */
 @keyframes flash { 0%, 100% { filter: none; } 30% { filter: brightness(1.35); } }
 .flash { animation: flash 1.2s ease-out; }
@@ -113,8 +143,13 @@ html, body {
 @keyframes slide-in-right { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 .slide-in-left { animation: slide-in-left 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .slide-in-right { animation: slide-in-right 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-/* the yellow "end-to-end encrypted" note at the top of a chat */
-.e2e-notice { background: #182229; color: #FFD279; }
-:root[data-theme="light"] .e2e-notice { background: #FFEECD; color: #54656F; }
+/* the "end-to-end encrypted" note at the top of a chat: a quiet card */
+.e2e-notice { background: rgb(var(--canvas-raised) / 0.85); color: rgb(var(--ink-muted)); box-shadow: 0 0 0 0.5px rgb(var(--overlay) / 0.1); }
+:root[data-theme="light"] .e2e-notice { background: rgba(255, 255, 255, 0.85); }
 .thin-scroll { scrollbar-width: thin; scrollbar-color: rgb(var(--overlay) / 0.18) transparent; }
 @media (prefers-reduced-motion: reduce) { .flash, .slide-in-left, .slide-in-right { animation: none; } }
+/* the audio call screen: a deep Pacewise blue-to-violet backdrop, and soft rings while it rings */
+.pw-call { background: radial-gradient(120% 80% at 50% 0%, #2D4BD6 0%, #1B2560 45%, #0B0C14 100%); }
+@keyframes pw-call-ring { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.75); opacity: 0; } }
+.pw-call-ring { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); animation: pw-call-ring 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pw-call-ring { animation: none; opacity: 0; } }

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronDown, Lock, LogOut, MessageSquarePlus, Moon, MoreVertical, Search, Sun, Trash2, Users, X } from "lucide-react";
+import { Bell, ChevronDown, Lock, LogOut, Moon, MoreHorizontal, Search, SquarePen, Sun, Trash2, Users, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { Preview } from "@/components/bits";
 import { Logo } from "@/components/Logo";
@@ -75,11 +75,11 @@ export function Sidebar(props: {
           <Logo />
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={props.onNewChat} aria-label="New chat" title="New chat" className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:bg-overlay/[0.08]"><MessageSquarePlus className="h-5 w-5" /></button>
+          <button type="button" onClick={props.onNewChat} aria-label="New chat" title="New chat" className="flex h-10 w-10 items-center justify-center rounded-full text-brand hover:bg-brand/10"><SquarePen className="h-[22px] w-[22px]" strokeWidth={2} /></button>
           <div ref={menuRef} className="relative">
-            <button type="button" onClick={() => setMenu((m) => !m)} aria-label="Menu" aria-expanded={menu} className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:bg-overlay/[0.08]"><MoreVertical className="h-5 w-5" /></button>
+            <button type="button" onClick={() => setMenu((m) => !m)} aria-label="Menu" aria-expanded={menu} className="flex h-10 w-10 items-center justify-center rounded-full text-brand hover:bg-brand/10"><MoreHorizontal className="h-6 w-6" strokeWidth={2.25} /></button>
             {menu && (
-              <div role="menu" className="glass-in absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-xl border border-overlay/10 bg-canvas-raised py-1.5 shadow-themed">
+              <div role="menu" className="pw-menu glass-in absolute right-0 top-11 z-50 w-60 overflow-hidden py-1.5">
                 <button role="menuitem" className={item} onClick={() => { setMenu(false); props.onNewGroup(); }}><Users className="h-4 w-4 text-ink-muted" /> New group</button>
                 {!props.notificationsAllowed && <button role="menuitem" className={item} onClick={() => { setMenu(false); props.onAskNotifications(); }}><Bell className="h-4 w-4 text-ink-muted" /> Turn on notifications</button>}
                 <button role="menuitem" className={item} onClick={() => { setMenu(false); props.setLight(!props.light); }}>{props.light ? <Moon className="h-4 w-4 text-ink-muted" /> : <Sun className="h-4 w-4 text-ink-muted" />} {props.light ? "Dark" : "Light"} theme</button>
@@ -93,17 +93,18 @@ export function Sidebar(props: {
         </div>
       </header>
 
-      <div className="shrink-0 px-3 pb-2">
-        <label className="flex h-10 items-center gap-3 rounded-full bg-overlay/[0.07] px-4 text-ink-muted focus-within:ring-1 focus-within:ring-brand/60">
+      <h1 className="shrink-0 px-4 pb-2 text-[32px] font-bold leading-tight tracking-[-0.02em] text-ink">Chats</h1>
+      <div className="shrink-0 px-4 pb-3">
+        <label className="pw-search flex h-10 items-center gap-2.5 rounded-[12px] px-3 text-ink-muted focus-within:ring-2 focus-within:ring-brand/40">
           <Search className="h-4 w-4 shrink-0" />
           <span className="sr-only">Search chats and people</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search or start a new chat" className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint" />
           {q && <button type="button" onClick={() => setQ("")} aria-label="Clear search"><X className="h-4 w-4" /></button>}
         </label>
-        <div className="mt-2.5 flex gap-2" role="tablist" aria-label="Filter chats">
+        <div className="pw-seg mt-3 flex rounded-[10px] p-[3px]" role="tablist" aria-label="Filter chats">
           {(["all", "unread", "groups"] as Filter[]).map((f) => (
             <button key={f} role="tab" aria-selected={filter === f} onClick={() => setFilter(f)}
-              className={cn("rounded-full px-3.5 py-1 text-sm capitalize transition-colors", filter === f ? "bg-brand/20 text-brand" : "bg-overlay/[0.07] text-ink-muted hover:bg-overlay/[0.1]")}>{f}</button>
+              className={cn("flex-1 rounded-[8px] py-1 text-[13px] font-medium capitalize transition-colors", filter === f ? "pw-seg-on text-ink" : "text-ink-muted")}>{f}</button>
           ))}
         </div>
       </div>
@@ -116,7 +117,7 @@ export function Sidebar(props: {
             {filter === "all" ? <>No chats yet. <button className="text-brand underline-offset-4 hover:underline" onClick={props.onNewChat}>Start one</button> with anyone on Pacewise.</> : filter === "unread" ? "No unread chats." : "You are not in any groups yet."}
           </div>
         )}
-        {term && shown.length > 0 && <p className="px-4 pb-1 pt-3 text-xs uppercase tracking-wide text-brand">Chats</p>}
+        {term && shown.length > 0 && <p className="px-4 pb-1 pt-3 text-[13px] font-semibold text-ink-muted">Chats</p>}
         <ul>
           {shown.map((c) => {
             const other = otherOf(c, me);
@@ -125,16 +126,16 @@ export function Sidebar(props: {
             return (
               <li key={c.id} className="group relative" onContextMenu={(e) => { e.preventDefault(); setRowMenu({ c, x: e.clientX, y: e.clientY }); }}>
                 <button type="button" onClick={() => onOpen(c.id)} aria-current={activeId === c.id ? "true" : undefined}
-                  className={cn("flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-overlay/[0.05]", activeId === c.id && "bg-overlay/[0.09] hover:bg-overlay/[0.09]")}>
-                  <Avatar id={c.type === "group" ? c.id : other?.id ?? c.id} name={titleOf(c, me)} url={other?.avatarUrl} group={c.type === "group"} online={c.type === "direct" && other?.id !== me && other?.online} size={48} />
+                  className={cn("flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-overlay/[0.04]", activeId === c.id && "bg-brand/10 hover:bg-brand/10")}>
+                  <Avatar id={c.type === "group" ? c.id : other?.id ?? c.id} name={titleOf(c, me)} url={other?.avatarUrl} group={c.type === "group"} online={c.type === "direct" && other?.id !== me && other?.online} size={52} />
                   <span className="min-w-0 flex-1 border-b border-overlay/[0.06] pb-2.5 pt-0.5">
                     <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[15px] text-ink">{titleOf(c, me)}</span>
+                      <span className="truncate text-[16px] font-semibold text-ink">{titleOf(c, me)}</span>
                       <span className={cn("shrink-0 text-xs", c.unread ? "text-brand" : "text-ink-faint")}>{listTime(c.lastMessageAt)}</span>
                     </span>
                     <span className="mt-0.5 flex items-center justify-between gap-2 text-sm text-ink-muted">
                       {typingText ? <span className="truncate text-brand">{typingText}</span> : <Preview c={c} me={me} plain={props.plain} />}
-                      {c.unread > 0 && <span className="flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-canvas">{c.unread > 99 ? "99+" : c.unread}</span>}
+                      {c.unread > 0 && <span className="flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{c.unread > 99 ? "99+" : c.unread}</span>}
                       <span className="w-5 shrink-0" aria-hidden />
                     </span>
                   </span>
@@ -149,14 +150,14 @@ export function Sidebar(props: {
         </ul>
         {term && newPeople.length > 0 && (
           <>
-            <p className="px-4 pb-1 pt-4 text-xs uppercase tracking-wide text-brand">People on Pacewise</p>
+            <p className="px-4 pb-1 pt-4 text-[13px] font-semibold text-ink-muted">People on Pacewise</p>
             <ul>
               {newPeople.map((p) => (
                 <li key={p.id}>
                   <button type="button" onClick={() => { setQ(""); props.onStartDirect(p.id); }} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-overlay/[0.05]">
                     <Avatar id={p.id} name={p.name} url={p.avatarUrl} online={p.online} size={44} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] text-ink">{p.name}</span>
+                      <span className="block truncate text-[16px] font-semibold text-ink">{p.name}</span>
                       <span className="block truncate text-xs text-ink-muted">@{p.username} · {presenceLabel(p)}</span>
                     </span>
                   </button>
@@ -167,7 +168,7 @@ export function Sidebar(props: {
         )}
         {term && shown.length === 0 && newPeople.length === 0 && <p className="px-6 py-10 text-center text-sm text-ink-muted">No chats or people match “{q.trim()}”.</p>}
         {rowMenu && (
-          <div ref={rowMenuRef} role="menu" className="glass-in fixed z-[130] w-48 overflow-hidden rounded-xl border border-overlay/10 bg-canvas-raised py-1.5 shadow-themed"
+          <div ref={rowMenuRef} role="menu" className="pw-menu glass-in fixed z-[130] w-48 overflow-hidden py-1.5"
             style={{ left: Math.max(8, Math.min(rowMenu.x, window.innerWidth - 200)), top: Math.min(rowMenu.y, window.innerHeight - 60) }}>
             <button role="menuitem" type="button" onClick={() => { const c = rowMenu.c; setRowMenu(null); props.onDeleteChat(c); }}
               className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Trash2 className="h-4 w-4" /> Delete chat</button>

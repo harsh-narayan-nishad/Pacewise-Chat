@@ -16,12 +16,13 @@ export function tickState(m: Message, c: Conversation, me: string): TickState {
   return "sent";
 }
 
-export function Ticks({ state, className }: { state: TickState; className?: string }) {
+export function Ticks({ state, className, onBrand = false }: { state: TickState; className?: string; /** On my blue bubble: white ticks, solid white when read. */ onBrand?: boolean }) {
   const cls = cn("h-4 w-4 shrink-0", className);
   if (state === "sending") return <Clock3 className={cn(cls, "h-3.5 w-3.5 opacity-70")} aria-label="Sending" />;
   if (state === "failed") return null;
   if (state === "sent") return <Check className={cn(cls, "opacity-70")} aria-label="Sent" />;
-  return <CheckCheck className={cn(cls, state === "read" ? "text-tick" : "opacity-70")} aria-label={state === "read" ? "Read" : "Delivered"} />;
+  const read = state === "read";
+  return <CheckCheck className={cn(cls, onBrand ? (read ? "text-white" : "opacity-60") : read ? "text-tick" : "opacity-70")} strokeWidth={read ? 2.5 : 2} aria-label={read ? "Read" : "Delivered"} />;
 }
 
 /** The one-line preview under a chat's name. */

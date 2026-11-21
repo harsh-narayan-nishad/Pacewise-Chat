@@ -67,7 +67,7 @@ export function PeoplePicker({ exclude = [], selected, onToggle, onPick, top, au
                   className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-overlay/[0.05]">
                   <span className="relative">
                     <Avatar id={p.id} name={p.name} url={p.avatarUrl} online={p.online} size={44} />
-                    {picking && on && <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-canvas bg-brand text-canvas"><Check className="h-3 w-3" strokeWidth={3} /></span>}
+                    {picking && on && <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-canvas bg-brand text-white"><Check className="h-3 w-3" strokeWidth={3} /></span>}
                   </span>
                   <span className="min-w-0 flex-1 border-b border-overlay/[0.06] pb-2.5 pt-0.5">
                     <span className="block truncate text-[15px] text-ink">{p.name}</span>
@@ -124,7 +124,7 @@ export function NewChat({ mode, me, onClose, onMode, onPick, onCreateGroup }: {
         <PeoplePicker exclude={[me]} onPick={(p) => onPick(p.id)} top={
           <>
             <button type="button" onClick={() => onMode("group")} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-overlay/[0.05]">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand text-canvas"><Users className="h-5 w-5" /></span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand text-white"><Users className="h-5 w-5" /></span>
               <span className="text-[15px] text-ink">New group</span>
             </button>
             <button type="button" onClick={() => onPick(me)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-overlay/[0.05]">
@@ -149,7 +149,7 @@ export function NewChat({ mode, me, onClose, onMode, onPick, onCreateGroup }: {
           <PeoplePicker exclude={[me]} selected={picked} onToggle={toggle} />
           <div className="flex shrink-0 justify-center py-4">
             <button type="button" disabled={picked.size === 0} onClick={() => setStep(2)} aria-label="Next"
-              className="glass-fab flex h-14 w-14 items-center justify-center rounded-full bg-brand text-canvas shadow-themed disabled:opacity-30"><ArrowRight className="h-6 w-6" /></button>
+              className="glass-fab flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-themed disabled:opacity-30"><ArrowRight className="h-6 w-6" /></button>
           </div>
         </>
       )}
@@ -171,7 +171,7 @@ export function NewChat({ mode, me, onClose, onMode, onPick, onCreateGroup }: {
           {error && <p className="text-sm text-accent-extreme" role="alert">{error}</p>}
           <div className="mt-auto flex justify-center pb-2">
             <button type="submit" disabled={!name.trim() || busy} aria-label="Create group"
-              className="glass-fab flex h-14 w-14 items-center justify-center rounded-full bg-brand text-canvas shadow-themed disabled:opacity-30">{busy ? <ButtonWheel /> : <Check className="h-6 w-6" />}</button>
+              className="glass-fab flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-themed disabled:opacity-30">{busy ? <ButtonWheel /> : <Check className="h-6 w-6" />}</button>
           </div>
         </form>
       )}

@@ -51,7 +51,10 @@ export interface Conversation {
   unread: number;
   lastMessage: Message | null;
 }
-export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys"; conversationId?: string; from?: string; data?: unknown }
+export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call"; conversationId?: string; from?: string; data?: unknown }
+/** One audio-call message between the two browsers (relayed by the server, never stored). */
+export interface CallSignal { callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy"; sdp?: string; candidate?: RTCIceCandidateInit }
+export type ReportReason = "spam" | "harassment" | "inappropriate" | "impersonation" | "other";
 
 const c = (id: string) => `/chat/conversations/${encodeURIComponent(id)}`;
 
@@ -76,6 +79,10 @@ export const chatApi = {
   deleteMessage: (id: string, messageId: string, scope: "me" | "everyone" = "everyone") => api<void>(`${c(id)}/messages/${encodeURIComponent(messageId)}`, { method: "DELETE", query: { scope } }),
   read: (id: string, at?: string) => api<void>(`${c(id)}/read`, { method: "POST", body: at ? { at } : {} }),
   typing: (id: string) => api<void>(`${c(id)}/typing`, { method: "POST" }),
+  /** Audio calls: send a call message to the other person in a one-to-one chat. */
+  call: (id: string, body: CallSignal) => api<void>(`${c(id)}/call`, { method: "POST", body }),
+  /** Report a person (spam, harassment …): it goes to the Pacewise admins' Reports. */
+  report: (userId: string, reason: ReportReason, details: string) => api<{ id: string; status: string }>("/reports", { method: "POST", body: { targetType: "user", targetId: userId, reason, details } }),
 };
 
 /** The live event stream's address (EventSource cannot send headers, so the token goes in the query). */
