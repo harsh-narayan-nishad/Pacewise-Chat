@@ -53,7 +53,15 @@ export interface Conversation {
 }
 export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call"; conversationId?: string; from?: string; data?: unknown }
 /** One audio-call message between the two browsers (relayed by the server, never stored). */
-export interface CallSignal { callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy"; video?: boolean; sdp?: string; candidate?: RTCIceCandidateInit }
+export interface CallPerson { id: string; name: string; username?: string; avatarUrl: string | null }
+export interface CallSignal {
+  callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy" | "invite"; video?: boolean; sdp?: string; candidate?: RTCIceCandidateInit;
+  /** Between two people in a call: who it is for (none on "end": I left). */
+  to?: string;
+  /** On "invite": who is in the call. On an "offer" inside a call: who is offering. */
+  people?: CallPerson[]; who?: CallPerson | null;
+}
+export type PeerSignal = Pick<CallSignal, "kind" | "to" | "video" | "sdp" | "candidate">;
 export type ReportReason = "spam" | "harassment" | "inappropriate" | "impersonation" | "other";
 
 const c = (id: string) => `/chat/conversations/${encodeURIComponent(id)}`;
@@ -85,6 +93,9 @@ export const chatApi = {
   downloadFile: async (id: string, fileId: string) => (await authedFetch(`${c(id)}/files/${encodeURIComponent(fileId)}`)).arrayBuffer(),
   /** Audio calls: send a call message to the other person in a one-to-one chat. */
   call: (id: string, body: CallSignal) => api<void>(`${c(id)}/call`, { method: "POST", body }),
+  /** Calls with more people: setup messages to one person in the call, and joining a call I was added to. */
+  peerCall: (callId: string, body: PeerSignal) => api<void>(`/chat/calls/${encodeURIComponent(callId)}/signal`, { method: "POST", body }),
+  joinCall: (callId: string) => api<{ people: CallPerson[] }>(`/chat/calls/${encodeURIComponent(callId)}/join`, { method: "POST" }),
   /** Report a person (spam, harassment …): it goes to the Pacewise admins' Reports. */
   report: (userId: string, reason: ReportReason, details: string) => api<{ id: string; status: string }>("/reports", { method: "POST", body: { targetType: "user", targetId: userId, reason, details } }),
 };
