@@ -1257,7 +1257,7 @@ function CallButton({
         className={`flex h-[68px] w-[68px] items-center justify-center rounded-full shadow-lg transition-transform active:scale-95 ${bg}`}
       >
         {children}
-    /button>
+      </button>
       <span className="text-[13px] text-white/85 drop-shadow">{label}</span>
     </span>
   );
