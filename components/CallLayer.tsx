@@ -13,14 +13,13 @@ import {
   Mic,
   MicOff,
   Phone,
-  PhoneOff,
   SwitchCamera,
   UserPlus,
   Video,
   VideoOff,
 } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
-import { ApiError } from "@/lib/api";
+import { API_BASE, ApiError, session } from "@/lib/api";
 import {
   chatApi,
   type CallPerson,
@@ -46,6 +45,10 @@ const ICE: RTCConfiguration = {
   ],
 };
 const RING_MS = 45_000;
+/** A connected call that loses the network (Wi-Fi ↔ mobile data, a weak signal) reconnects for this long before it ends. */
+const RECONNECT_MS = 30_000;
+/** While reconnecting: a new network path is asked for this often (by the person with the smaller id, so only one side offers). */
+const RESTART_EVERY_MS = 5_000;
 const AUDIO: MediaTrackConstraints = {
   echoCancellation: true,
   noiseSuppression: true,
@@ -80,7 +83,11 @@ interface Peer {
   stream: MediaStream | null;
   hasVideo: boolean;
   state: "ringing" | "connecting" | "connected";
+  /** Their device got the call and is ringing (until then the call is only "Calling…"). */
+  rung?: boolean;
   convId?: string;
+  /** A small control channel straight to them: "bye" when either side hangs up, so the other ends at once. */
+  dc?: RTCDataChannel;
 }
 /** Everyone connects to everyone, so calls stay small (the server holds the same limit). */
 const MAX_PEOPLE = 6;
@@ -206,7 +213,11 @@ export const CallLayer = forwardRef<
     ringTimer.current = null;
     ringing.current.forEach((t) => window.clearTimeout(t));
     ringing.current.clear();
-    peers.current.forEach((p) => p.pc?.close());
+    // "bye" straight to everyone (they end at once, even if the server's message is late), then close a moment later
+    // so it is delivered.
+    const closing = [...peers.current.values()];
+    for (const x of closing) { try { if (x.dc?.readyState === "open") x.dc.send("bye"); } catch { /* channel gone */ } }
+    window.setTimeout(() => closing.forEach((x) => x.pc?.close()), 250);
     peers.current.clear();
     local.current?.getTracks().forEach((t) => t.stop());
     local.current = null;
@@ -219,13 +230,56 @@ export const CallLayer = forwardRef<
   /** Show how the call ended for a moment, then close the screen. */
   const finish = (text: string) => {
     cleanup();
-    setCall((c) => (c ? { ...c, phase: "ended", note: text } : c));
+    // A call that was talking shows how long it lasted: "Call ended · 05:23".
+    setCall((c) => (c ? { ...c, phase: "ended", note: c.startedAt ? `${text} · ${clock(Math.max(0, Math.floor((Date.now() - c.startedAt) / 1000)))}` : text } : c));
     window.setTimeout(
       () => setCall((c) => (c?.phase === "ended" ? null : c)),
       1800,
     );
   };
   useEffect(() => () => cleanup(), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * While a call is on: keep the screen awake (a locked phone pauses the browser and its sound), asked again when the
+   * tab comes back to the front, and warn before the tab is closed or reloaded, which would end the call.
+   */
+  const onCall = !!call && call.phase !== "incoming" && call.phase !== "ended";
+  useEffect(() => {
+    if (!onCall) return;
+    type Lock = { release: () => Promise<void> };
+    const wl = (navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<Lock> } }).wakeLock;
+    let lock: Lock | null = null;
+    let on = true;
+    const keepAwake = () => {
+      if (!wl || document.visibilityState !== "visible") return;
+      wl.request("screen").then((l) => { if (on) lock = l; else void l.release().catch(() => undefined); }, () => undefined);
+    };
+    const leaving = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    // The page really goes (closed, reloaded, the app killed): "bye" to everyone, and "end" to the server with a request
+    // the browser still delivers after the page is gone.
+    const gone = () => {
+      for (const x of peers.current.values()) { try { if (x.dc?.readyState === "open") x.dc.send("bye"); } catch { /* channel gone */ } }
+      const c = callRef.current;
+      const s = session.get();
+      if (!c || !s || !API_BASE) return;
+      const body = c.phase === "outgoing" ? { callId: c.callId, kind: "end" } : { kind: "end" };
+      const path = c.phase === "outgoing" ? `/chat/conversations/${encodeURIComponent(c.convId)}/call` : `/chat/calls/${encodeURIComponent(c.callId)}/signal`;
+      try {
+        void fetch(API_BASE + path, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.accessToken}` }, body: JSON.stringify(body) }).catch(() => undefined);
+      } catch { /* the page is closing */ }
+    };
+    window.addEventListener("pagehide", gone);
+    keepAwake();
+    document.addEventListener("visibilitychange", keepAwake);
+    window.addEventListener("beforeunload", leaving);
+    return () => {
+      on = false;
+      document.removeEventListener("visibilitychange", keepAwake);
+      window.removeEventListener("beforeunload", leaving);
+      window.removeEventListener("pagehide", gone);
+      void lock?.release().catch(() => undefined);
+    };
+  }, [onCall]);
 
   // the call timer
   useEffect(() => {
@@ -279,11 +333,21 @@ export const CallLayer = forwardRef<
     if (video && !m.video) setCall((c) => (c ? { ...c, camOff: true } : c));
   }
 
+  /** "Neha declined", "Neha didn't answer", "Neha is on another call", "Couldn't connect to Neha", "Neha left". */
+  const leftLine = (name: string, why?: string) =>
+    why === "Declined" ? `${name} declined`
+      : why === "No answer" ? `${name} didn't answer`
+        : why === "On another call" ? `${name} is on another call`
+          : why === "Couldn't connect" ? `Couldn't connect to ${name}`
+            : why ? `${name}: ${why}` : `${name} left`;
+
   /** Someone left (or never joined): close their connection; the call ends when nobody is left in it. */
   function drop(id: string, why?: string) {
     const x = peers.current.get(id);
     if (!x) return;
-    x.pc?.close();
+    try { if (x.dc?.readyState === "open") x.dc.send("bye"); } catch { /* channel gone */ }
+    const pc = x.pc;
+    window.setTimeout(() => pc?.close(), 250);
     peers.current.delete(id);
     stopRinging(id);
     bump();
@@ -296,8 +360,7 @@ export const CallLayer = forwardRef<
     ) {
       if (rest.length) void sendPeer(c.callId, { kind: "end" }); // nobody left but people still being rung: stop ringing them
       finish(why ?? "Call ended");
-    } else if (why) say(`${x.who.name}: ${why}`);
-    else say(`${x.who.name} left`);
+    } else say(leftLine(x.who.name, why));
   }
 
   /** A direct connection to one person in the call, with my microphone (and camera) on it. */
@@ -314,6 +377,14 @@ export const CallLayer = forwardRef<
     if (video && !s?.getVideoTracks().length)
       p.addTransceiver("video", { direction: "recvonly" });
     const peer: Peer = { who, pc: p, stream: null, hasVideo: false, state };
+    // The control channel: both sides open it with the same id, so it needs no extra setup. "bye" (or the channel closing
+    // while the connection is still up) means they hung up: end at once, with no "Reconnecting…".
+    try {
+      const dc = p.createDataChannel("control", { negotiated: true, id: 0 });
+      dc.onmessage = (ev) => { if (ev.data === "bye" && peers.current.get(who.id) === peer) drop(who.id); };
+      dc.onclose = () => { if (peers.current.get(who.id) === peer && p.connectionState === "connected") drop(who.id); };
+      peer.dc = dc;
+    } catch { /* no data channels here: the server's "end" still ends the call */ }
     peers.current.set(who.id, peer);
     p.onicecandidate = (e) => {
       if (e.candidate)
@@ -339,9 +410,53 @@ export const CallLayer = forwardRef<
       }
       bump();
     };
+    /**
+     * Keeping a call alive: once connected, a lost network is not the end. The person with the smaller id asks for a new
+     * network path (ICE restart) every few seconds; the other side answers it. Only if nothing works for RECONNECT_MS
+     * does this person leave the call.
+     */
+    let lost: number | null = null;
+    let retry: number | null = null;
+    const stopRecovery = () => {
+      if (lost) window.clearTimeout(lost);
+      if (retry) window.clearTimeout(retry);
+      lost = retry = null;
+    };
+    const restart = async () => {
+      retry = null;
+      if (peers.current.get(who.id) !== peer || p.connectionState === "connected" || p.connectionState === "closed") return;
+      try {
+        if (p.signalingState === "have-local-offer") await p.setLocalDescription({ type: "rollback" });
+        if (p.signalingState === "stable") {
+          const o = await p.createOffer({ iceRestart: true });
+          await p.setLocalDescription(o);
+          await sendPeer(callId, { kind: "offer", to: who.id, video, sdp: o.sdp });
+        }
+      } catch {
+        /* tried again below */
+      }
+      if (lost) retry = window.setTimeout(() => void restart(), RESTART_EVERY_MS);
+    };
     p.onconnectionstatechange = () => {
       if (peers.current.get(who.id) !== peer) return;
+      if (p.connectionState === "closed") { stopRecovery(); return; }
+      if ((p.connectionState === "disconnected" || p.connectionState === "failed") && peer.state === "connected") {
+        if (!lost) {
+          say(`Reconnecting to ${who.name}…`);
+          lost = window.setTimeout(() => {
+            stopRecovery();
+            if (peers.current.get(who.id) !== peer || p.connectionState === "connected") return;
+            void sendPeer(callId, { kind: "end", to: who.id });
+            drop(who.id, "Couldn't connect");
+          }, RECONNECT_MS);
+        }
+        // "disconnected" often heals by itself: wait a moment first; "failed" needs a new path now.
+        if (me < who.id && !retry) retry = window.setTimeout(() => void restart(), p.connectionState === "failed" ? 0 : 2500);
+        return;
+      }
       if (p.connectionState === "connected") {
+        if (lost) say(`Reconnected to ${who.name}`);
+        stopRecovery();
         peer.state = "connected";
         tone.stop();
         setCall((c) =>
@@ -353,7 +468,7 @@ export const CallLayer = forwardRef<
       }
       if (p.connectionState === "failed") {
         void sendPeer(callId, { kind: "end", to: who.id });
-        drop(who.id, "Could not connect");
+        drop(who.id, "Couldn't connect");
       }
     };
     bump();
@@ -412,7 +527,7 @@ export const CallLayer = forwardRef<
       const o = await p.createOffer();
       await p.setLocalDescription(o);
       await chatApi.call(conv.id, { callId, kind: "offer", video, sdp: o.sdp });
-      tone.play("back");
+      // "Calling…" until their device reports that it is ringing; the ring-back tone starts then.
       ringTimer.current = window.setTimeout(() => {
         if (
           callRef.current?.callId === callId &&
@@ -426,9 +541,9 @@ export const CallLayer = forwardRef<
       const denied =
         e instanceof DOMException &&
         (e.name === "NotAllowedError" || e.name === "SecurityError");
-      finish(denied ? "Microphone not allowed" : "Could not start the call");
+      finish(denied ? (video ? "Camera or microphone access was denied" : "Microphone access was denied") : "Couldn't start the call");
       if (!denied)
-        onError(e instanceof Error ? e.message : "Could not start the call.");
+        onError(e instanceof Error ? e.message : "Couldn't start the call.");
     }
   }
 
@@ -460,10 +575,10 @@ export const CallLayer = forwardRef<
       const denied = e instanceof DOMException && e.name === "NotAllowedError";
       finish(
         denied
-          ? "Microphone not allowed"
+          ? "Microphone access was denied"
           : e instanceof Error && /ended/.test(e.message)
             ? "Call ended"
-            : "Could not connect",
+            : "Couldn't connect",
       );
     }
   }
@@ -518,10 +633,10 @@ export const CallLayer = forwardRef<
       bump();
       say(
         e instanceof ApiError && (e.status === 400 || e.status === 404)
-          ? "Adding people needs the updated Pacewise server."
+          ? "Adding people requires the latest Pacewise server."
           : e instanceof Error
             ? e.message
-            : `Could not add ${who.name}.`,
+            : `Couldn't add ${who.name}.`,
       );
     }
   }
@@ -592,7 +707,7 @@ export const CallLayer = forwardRef<
       }
     }
     if (!track) {
-      onError("Could not switch the camera.");
+      onError("Couldn't switch the camera.");
       try {
         track = await open(
           was.deviceId
@@ -658,6 +773,19 @@ export const CallLayer = forwardRef<
       if (c.phase === "incoming" || c.phase === "ended" || !s.sdp) return;
       const mine = peers.current.get(from);
       if (mine?.pc?.signalingState === "have-local-offer" && me < from) return;
+      // Reconnecting (a new network path for a connection we already have): answer it on the same connection.
+      if (mine?.pc && mine.state === "connected" && mine.pc.signalingState === "stable") {
+        try {
+          await mine.pc.setRemoteDescription({ type: "offer", sdp: s.sdp });
+          await flush(c.callId, from);
+          const a = await mine.pc.createAnswer();
+          await mine.pc.setLocalDescription(a);
+          await sendPeer(c.callId, { kind: "answer", to: from, sdp: a.sdp });
+          return;
+        } catch {
+          /* not a reconnect after all: a fresh connection below */
+        }
+      }
       const who = s.who ??
         mine?.who ?? { id: from, name: "Someone", avatarUrl: null };
       try {
@@ -699,6 +827,8 @@ export const CallLayer = forwardRef<
         with: others.map((p) => p.name),
       });
       tone.play("ring");
+      // Tell the caller this device is ringing (their screen goes from "Calling…" to "Ringing…").
+      void send(e.conversationId, { callId: s.callId, kind: "ringing" });
       try {
         navigator.vibrate?.([300, 200, 300]);
       } catch {
@@ -733,9 +863,25 @@ export const CallLayer = forwardRef<
     }
 
     if (!c || c.callId !== s.callId) return;
+    if (s.kind === "ringing") {
+      const x = peers.current.get(from);
+      if (x && x.state === "ringing" && !x.rung) {
+        x.rung = true;
+        bump();
+        if (c.phase === "outgoing") tone.play("back");
+      }
+      return;
+    }
     if (s.kind === "answer" && s.sdp) {
       const x = peers.current.get(from);
       if (!x?.pc) return;
+      // Reconnecting: an answer to an attempt that was already replaced is ignored (the newer one is still on its way).
+      if (x.state === "connected") {
+        if (x.pc.signalingState !== "have-local-offer") return;
+        await x.pc.setRemoteDescription({ type: "answer", sdp: s.sdp }).catch(() => undefined);
+        await flush(c.callId, from);
+        return;
+      }
       stopRinging(from);
       if (c.phase === "outgoing") {
         tone.stop();
@@ -748,7 +894,7 @@ export const CallLayer = forwardRef<
       }
       await x.pc
         .setRemoteDescription({ type: "answer", sdp: s.sdp })
-        .catch(() => drop(from, "Could not connect"));
+        .catch(() => drop(from, "Couldn't connect"));
       await flush(c.callId, from);
     } else if (s.kind === "decline") drop(from, "Declined");
     else if (s.kind === "busy") drop(from, "On another call");
@@ -775,7 +921,9 @@ export const CallLayer = forwardRef<
   const status = !call
     ? ""
     : call.phase === "outgoing"
-      ? "Calling…"
+      ? single?.rung
+        ? "Ringing…"
+        : "Calling…"
       : call.phase === "incoming"
         ? call.with?.length
           ? `Adding you to a ${kind} call`
@@ -930,8 +1078,8 @@ export const CallLayer = forwardRef<
                   aria-live="polite"
                 >
                   {status}
-                  {call.muted && call.phase === "active" ? " · muted" : ""}
-                  {call.video && call.camOff && live ? " · camera off" : ""}
+                  {call.muted && call.phase === "active" ? " · Muted" : ""}
+                  {call.video && call.camOff && live ? " · Camera off" : ""}
                 </p>
                 <div
                   className={cn(
@@ -974,7 +1122,9 @@ export const CallLayer = forwardRef<
                       <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/45 px-2.5 py-1 text-[12px] backdrop-blur">
                         {p.who.name.split(" ")[0]}
                         {p.state === "ringing"
-                          ? " · Ringing…"
+                          ? p.rung
+                            ? " · Ringing…"
+                            : " · Calling…"
                           : p.state === "connecting"
                             ? " · Connecting…"
                             : ""}
@@ -1044,8 +1194,8 @@ export const CallLayer = forwardRef<
                   aria-live="polite"
                 >
                   {status}
-                  {call.muted && call.phase === "active" ? " · muted" : ""}
-                  {call.video && call.camOff && live ? " · camera off" : ""}
+                  {call.muted && call.phase === "active" ? " · Muted" : ""}
+                  {call.video && call.camOff && live ? " · Camera off" : ""}
                 </p>
                 {call.phase === "incoming" && !!call.with?.length && (
                   <p className="mt-1 text-[15px] text-white/70">
@@ -1073,7 +1223,7 @@ export const CallLayer = forwardRef<
               {call.phase === "incoming" ? (
                 <>
                   <CallButton label="Decline" tone="red" onClick={decline}>
-                    <PhoneOff className="h-7 w-7" />
+                    <EndCallIcon />
                   </CallButton>
                   <CallButton
                     label="Accept"
@@ -1093,7 +1243,7 @@ export const CallLayer = forwardRef<
                   tone="glass"
                   onClick={() => setCall(null)}
                 >
-                  <PhoneOff className="h-7 w-7" />
+                  <EndCallIcon />
                 </CallButton>
               ) : (
                 <>
@@ -1143,7 +1293,7 @@ export const CallLayer = forwardRef<
                     </CallButton>
                   )}
                   <CallButton label="End" tone="red" onClick={hangup}>
-                    <PhoneOff className="h-7 w-7" />
+                    <EndCallIcon />
                   </CallButton>
                 </>
               )}
@@ -1177,8 +1327,8 @@ export const CallLayer = forwardRef<
                     </button>
                   </div>
                   <p className="mt-0.5 text-[13px] text-white/60">
-                    Up to {MAX_PEOPLE} people. They are rung from your chat with
-                    them.
+                    Up to {MAX_PEOPLE} people. Each person is called from your
+                    one-to-one chat with them.
                   </p>
                   <input
                     value={q}
@@ -1229,6 +1379,19 @@ export const CallLayer = forwardRef<
   );
 });
 
+/** The end-call mark phones use: a filled handset turned face down (no slash). */
+/**
+ * The hang-up mark, drawn for this app: a phone handset lying flat (the call put down), with rounded earpieces and a
+ * gently curved grip. Original artwork, not taken from any icon set.
+ */
+function EndCallIcon() {
+  return (
+    <svg viewBox="0 0 32 32" width="42" height="42" fill="currentColor" aria-hidden>
+      <path d="M4.2 18.9c-.6-.6-.9-1.4-.8-2.2.3-1.6 1.4-3 3.3-4C8.9 11.6 12.3 11 16 11s7.1.6 9.3 1.7c1.9 1 3 2.4 3.3 4 .1.8-.2 1.6-.8 2.2l-.9.9c-.6.6-1.5.8-2.3.5l-2.9-1.1c-.8-.3-1.3-1.1-1.2-2l.1-1.2c-1.4-.5-3-.7-4.6-.7s-3.2.2-4.6.7l.1 1.2c.1.9-.4 1.7-1.2 2l-2.9 1.1c-.8.3-1.7.1-2.3-.5z" />
+    </svg>
+  );
+}
+
 function CallButton({
   label,
   tone,
@@ -1242,7 +1405,9 @@ function CallButton({
 }) {
   const bg =
     tone === "red"
-      ? "bg-[#F2453D] text-white"
+      // End / Decline: a deep red with a soft top-to-bottom shade, a fine light rim and a red glow; it sinks a little and
+      // darkens when pressed.
+      ? "bg-gradient-to-b from-[#FF5147] to-[#E2342A] text-white shadow-[0_8px_24px_rgba(226,52,42,0.45),inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_0_rgba(0,0,0,0.12)] active:from-[#E0392F] active:to-[#C72A21]"
       : tone === "green"
         ? "bg-[#30C26A] text-white"
         : tone === "white"
@@ -1254,7 +1419,7 @@ function CallButton({
         type="button"
         onClick={onClick}
         aria-label={label}
-        className={`flex h-[68px] w-[68px] items-center justify-center rounded-full shadow-lg transition-transform active:scale-95 ${bg}`}
+        className={`flex items-center justify-center rounded-full transition-[transform,background-color] duration-150 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 ${tone === "red" ? "h-[72px] w-[72px]" : "h-[68px] w-[68px] shadow-lg"} ${bg}`}
       >
         {children}
       </button>

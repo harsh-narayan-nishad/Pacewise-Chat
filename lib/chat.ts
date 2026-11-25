@@ -55,7 +55,7 @@ export interface ChatEvent { type: "message" | "message-deleted" | "conversation
 /** One audio-call message between the two browsers (relayed by the server, never stored). */
 export interface CallPerson { id: string; name: string; username?: string; avatarUrl: string | null }
 export interface CallSignal {
-  callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy" | "invite"; video?: boolean; sdp?: string; candidate?: RTCIceCandidateInit;
+  callId: string; kind: "offer" | "answer" | "ice" | "end" | "decline" | "busy" | "invite" | "ringing"; video?: boolean; sdp?: string; candidate?: RTCIceCandidateInit;
   /** Between two people in a call: who it is for (none on "end": I left). */
   to?: string;
   /** On "invite": who is in the call. On an "offer" inside a call: who is offering. */
