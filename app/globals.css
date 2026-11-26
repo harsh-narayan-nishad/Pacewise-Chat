@@ -185,6 +185,8 @@ html, body {
 }
 :root[data-theme="light"] .pw-corner-lg .lg-rim { display: none; }
 :root[data-theme="light"] .pw-corner-sep { background: rgba(15, 23, 42, 0.16); }
+/* A section shown beside the open one during a swipe (as in To do): a picture of it only, no floating buttons of its own. */
+.pw-peek .fixed { display: none !important; }
 /* One round glass button on its own (flip book .rd-corner). */
 .pw-corner { position: relative; display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: rgb(var(--ink)); cursor: pointer; isolation: isolate; transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .pw-corner:active { transform: scale(0.94); }

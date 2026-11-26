@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Check, CheckCheck, CheckCircle2, ChevronRight, Maximize, Minimize, MonitorSmartphone, Lock, LogOut, Moon, MoreHorizontal, Palette, Phone, Search, SquarePen, Sun, Trash2, UserX, Users, X } from "lucide-react";
+import { Bell, Check, CheckCheck, CheckCircle2, ChevronRight, Maximize, Minimize, MonitorSmartphone, Lock, LogOut, Moon, MoreHorizontal, Palette, Search, SquarePen, Sun, Trash2, UserX, Users, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import LiquidGlass from "@/components/LiquidGlass";
@@ -41,7 +41,7 @@ function holdToOpen(open: (x: number, y: number) => void) {
 export function Sidebar(props: {
   user: User; convs: Conversation[]; loaded: boolean; error: string | null; plain: Record<string, Plain>; typing: Typing; activeId: string | null;
   onOpen: (id: string) => void; onStartDirect: (userId: string) => void; onNewChat: () => void; onNewGroup: () => void; onDeleteChat: (c: Conversation) => void; onDeleteChats: (cs: Conversation[]) => Promise<void>; onMarkRead: (ids: string[]) => void;
-  light: boolean; setLight: (v: boolean) => void; onProfile: () => void; fullScreen: { canFull: boolean; on: boolean; toggleFull: () => void }; onTheme: () => void; onBlocked: () => void; onLinkDevice: () => void; onCalls: () => void; onLock: () => void; onSignOut: () => void; notificationsAllowed: boolean; onAskNotifications: () => void;
+  light: boolean; setLight: (v: boolean) => void; onProfile: () => void; fullScreen: { canFull: boolean; on: boolean; toggleFull: () => void }; onTheme: () => void; onBlocked: () => void; onLinkDevice: () => void; onLock: () => void; onSignOut: () => void; notificationsAllowed: boolean; onAskNotifications: () => void;
 }) {
   const { user, convs, plain, typing, activeId, onOpen } = props;
   const me = user.id;
@@ -188,7 +188,6 @@ export function Sidebar(props: {
                   </button>
                   <div className="border-t-[6px] border-overlay/[0.07]">
                     <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onNewGroup(); }}><span className="flex-1">New group</span><Users className={icon} strokeWidth={1.75} /></button>
-                    <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onCalls(); }}><span className="flex-1">Calls</span><Phone className={icon} strokeWidth={1.75} /></button>
                     {convs.length > 0 && <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); setPicked(new Set()); }}><span className="flex-1">Select chats</span><CheckCircle2 className={icon} strokeWidth={1.75} /></button>}
                     {!props.notificationsAllowed && <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onAskNotifications(); }}><span className="flex-1">Turn on notifications</span><Bell className={icon} strokeWidth={1.75} /></button>}
                     <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.setLight(!props.light); }}><span className="flex-1">{props.light ? "Dark" : "Light"} theme</span>{props.light ? <Moon className={icon} strokeWidth={1.75} /> : <Sun className={icon} strokeWidth={1.75} />}</button>

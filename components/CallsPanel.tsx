@@ -29,7 +29,7 @@ function describe(c: CallLogEntry): { text: string; missed: boolean } {
  * Calls, as in WhatsApp: every call I made or got, newest first. An arrow shows its direction (red when missed),
  * then the kind, how it went and how long it lasted; the button on the right calls back the same way.
  */
-export function CallsPanel({ me, onClose, onCall }: { me: string; onClose: () => void; onCall: (c: CallLogEntry, video: boolean) => void }) {
+export function CallsPanel({ me, onClose, onCall, asTab = false }: { me: string; onClose: () => void; onCall: (c: CallLogEntry, video: boolean) => void; /** In the bottom nav: a big title like Chats, no back arrow. */ asTab?: boolean }) {
   const [list, setList] = useState<CallLogEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -41,12 +41,21 @@ export function CallsPanel({ me, onClose, onCall }: { me: string; onClose: () =>
   }, [onClose, clearing]);
 
   return (
-    <div className="slide-in-left flex h-full min-h-0 flex-col">
-      <header className="flex h-16 shrink-0 items-center gap-4 px-4">
-        <button type="button" onClick={onClose} aria-label="Back" className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:bg-overlay/[0.08]"><ArrowLeft className="h-5 w-5" /></button>
-        <h2 className="flex-1 text-lg text-ink">Calls</h2>
-        {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[14px] font-medium text-accent-extreme hover:bg-overlay/[0.06]">Clear call log</button>}
-      </header>
+    <div className={cn("flex h-full min-h-0 flex-col", !asTab && "slide-in-left")}>
+      {asTab ? (
+        <>
+          <header className="flex h-14 shrink-0 items-center justify-end px-4 pt-1">
+            {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[14px] font-medium text-accent-extreme hover:bg-overlay/[0.06]">Clear call log</button>}
+          </header>
+          <h1 className="shrink-0 px-4 pb-3 pt-1 text-[32px] font-bold leading-tight tracking-[-0.02em] text-ink">Calls</h1>
+        </>
+      ) : (
+        <header className="flex h-16 shrink-0 items-center gap-4 px-4">
+          <button type="button" onClick={onClose} aria-label="Back" className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:bg-overlay/[0.08]"><ArrowLeft className="h-5 w-5" /></button>
+          <h2 className="flex-1 text-lg text-ink">Calls</h2>
+          {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[14px] font-medium text-accent-extreme hover:bg-overlay/[0.06]">Clear call log</button>}
+        </header>
+      )}
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto pb-8">
         {error && <p className="px-4 py-3 text-[14px] text-accent-extreme" role="alert">{error}</p>}
         {!list && !error && <PanelLoader label="Loading calls" />}

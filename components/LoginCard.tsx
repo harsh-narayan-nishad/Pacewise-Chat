@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { QrCode } from "lucide-react";
+import { ArrowLeft, QrCode } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { QrSignIn } from "@/components/QrSignIn";
 import { Logo } from "@/components/Logo";
 import { ApiError, googleLogin, login, logout, PACEWISE_URL, type User } from "@/lib/api";
@@ -37,7 +38,17 @@ export function LoginCard({ onSignedIn }: { onSignedIn: (u: User) => void }) {
   return (
     <main className="grid h-screen w-full grid-rows-[minmax(0,1fr)] overflow-hidden lg:grid-cols-2">
       <div className="flex h-full min-h-0 flex-col overflow-y-auto px-6 py-10 sm:px-12 lg:px-[8vw]">
-        <div className="my-auto">
+        {/* Phones: "Sign in with a QR code" opens the code as a page of its own, in place of the form. */}
+        {qrOpen && (
+          <div className="my-auto flex flex-col items-center lg:hidden">
+            <button type="button" onClick={() => setQrOpen(false)} className="mb-8 inline-flex items-center gap-1.5 self-start text-sm font-medium text-ink-muted hover:text-ink">
+              <ArrowLeft className="h-4 w-4" /> Sign in with password
+            </button>
+            <Logo size="lg" className="mb-10 self-start" />
+            <QrSignIn onSignedIn={onSignedIn} />
+          </div>
+        )}
+        <div className={cn("my-auto", qrOpen && "hidden lg:block")}>
           <Logo size="lg" className="mb-8" />
           <h1 className="mb-3 font-display text-5xl leading-[1.04] tracking-[-0.04em] text-ink sm:text-6xl xl:text-7xl">Say it. Safely.</h1>
           <p className="mb-10 max-w-sm text-ink-muted">Sign in with your Pacewise account to message anyone on Pacewise. Every chat is end-to-end encrypted.</p>
@@ -55,11 +66,10 @@ export function LoginCard({ onSignedIn }: { onSignedIn: (u: User) => void }) {
               {error && <p className="text-sm text-accent-extreme" role="alert">{error}</p>}
               <Button type="submit" size="lg" disabled={busy} className="mt-1 h-14 w-full text-base">{busy && <ButtonWheel />}{busy ? "Please wait…" : "Sign in"}</Button>
             </form>
-            <button type="button" onClick={() => setQrOpen((v) => !v)} aria-expanded={qrOpen}
+            <button type="button" onClick={() => setQrOpen(true)}
               className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-ink underline-offset-4 hover:underline lg:hidden">
-              <QrCode className="h-4 w-4" /> {qrOpen ? "Hide QR code" : "Sign in with a QR code"}
+              <QrCode className="h-4 w-4" /> Sign in with a QR code
             </button>
-            {qrOpen && <QrSignIn onSignedIn={onSignedIn} className="mt-6 lg:hidden" />}
             <p className="mt-6 text-sm text-ink-muted">
               No account yet? <a href={PACEWISE_URL} target="_blank" rel="noopener noreferrer" className="text-ink underline underline-offset-4 hover:text-accent-medium">Create one in Pacewise</a>.
             </p>

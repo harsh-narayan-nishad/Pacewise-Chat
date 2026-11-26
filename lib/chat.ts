@@ -59,7 +59,10 @@ export interface CallLogEntry {
   outcome: "ringing" | "answered" | "missed" | "declined" | "busy" | "unanswered" | "cancelled";
   startedAt: string; answeredAt: string | null; endedAt: string | null; seconds: number; peers: CallPerson[];
 }
-export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call"; conversationId?: string; from?: string; data?: unknown }
+/** A status update (24 hours). `views` only on my own. */
+export interface StatusItem { id: string; kind: "text" | "photo"; text: string; bg: string; image: string | null; createdAt: string; expiresAt: string; seen: boolean; views?: number }
+export interface StatusGroup { user: CallPerson; items: StatusItem[]; allSeen: boolean; latest: string }
+export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call" | "status"; conversationId?: string; from?: string; data?: unknown }
 /** One audio-call message between the two browsers (relayed by the server, never stored). */
 export interface CallPerson { id: string; name: string; username?: string; avatarUrl: string | null }
 export interface CallSignal {
@@ -110,6 +113,12 @@ export const chatApi = {
   /** My call history (Calls), newest first; and clearing it (mine only). */
   calls: () => api<CallLogEntry[]>("/chat/calls"),
   clearCalls: () => api<void>("/chat/calls", { method: "DELETE" }),
+  /** Status: mine and my contacts' (24-hour updates). */
+  statuses: () => api<{ mine: StatusItem[]; others: StatusGroup[] }>("/chat/status"),
+  postStatus: (body: { kind: "text"; text: string; bg: string } | { kind: "photo"; image: string; text?: string }) => api<StatusItem>("/chat/status", { method: "POST", body }),
+  viewStatus: (id: string) => api<void>(`/chat/status/${encodeURIComponent(id)}/view`, { method: "POST" }),
+  statusViewers: (id: string) => api<(CallPerson & { at: string })[]>(`/chat/status/${encodeURIComponent(id)}/viewers`),
+  deleteStatus: (id: string) => api<void>(`/chat/status/${encodeURIComponent(id)}`, { method: "DELETE" }),
   /** Report a person (spam, harassment …): it goes to the Pacewise admins' Reports. */
   report: (userId: string, reason: ReportReason, details: string) => api<{ id: string; status: string }>("/reports", { method: "POST", body: { targetType: "user", targetId: userId, reason, details } }),
 };

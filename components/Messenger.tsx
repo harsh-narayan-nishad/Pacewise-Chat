@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Lock } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { NewChat } from "@/components/NewChat";
@@ -7,6 +8,8 @@ import { ProfilePanel } from "@/components/ProfilePanel";
 import { BlockedPanel, ChatThemePanel } from "@/components/ChatSettings";
 import { LinkDevicePanel } from "@/components/LinkDevicePanel";
 import { CallsPanel } from "@/components/CallsPanel";
+import { StatusTab } from "@/components/StatusTab";
+import { BottomNav } from "@/components/BottomNav";
 import { applyLook, loadLook } from "@/lib/look";
 import { useFullScreen } from "@/lib/fullscreen";
 import { ChatWindow } from "@/components/ChatWindow";
@@ -38,6 +41,9 @@ const byRecent = (a: Conversation, b: Conversation) => b.lastMessageAt.localeCom
  * info on the far right. Live updates come over Server-Sent Events, with a 20-second check as a fallback (which also
  * keeps my "online" status fresh for the others). Everything is decrypted here, in the browser.
  */
+/** The gap between two sections side by side during a swipe (as in To do). */
+const PAGE_GAP = 16;
+
 export function Messenger({ user, identity, light, setLight, onLock, onSignOut, onUserChange }: {
   user: User; identity: Identity; light: boolean; setLight: (v: boolean) => void; onLock: () => void; onSignOut: () => void; onUserChange: (u: User) => void;
 }) {
@@ -50,7 +56,137 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   const [threads, setThreads] = useState<Record<string, Thread>>({});
   const [plain, setPlain] = useState<Record<string, Plain>>({});
   const [typing, setTyping] = useState<Typing>({});
-  const [panel, setPanel] = useState<null | "chat" | "group" | "profile" | "theme" | "blocked" | "link" | "calls">(null);
+  const [panel, setPanel] = useState<null | "chat" | "group" | "profile" | "theme" | "blocked" | "link">(null);
+  /** The bottom nav: Chats, Status and Calls (as in WhatsApp). */
+  const [tab, setTab] = useState<"chats" | "status" | "calls">("chats");
+  /** Bumped when a contact posts or deletes a status, so an open Status tab reloads. */
+  const [statusVersion, setStatusVersion] = useState(0);
+
+  /**
+   * Phones: swipe left / right to go to the next / previous section of the bottom nav, exactly as in To do: the page
+   * follows the finger once the swipe is clearly sideways (vertical scrolling is left alone), the next section is right
+   * there beside it, it resists at the first and last section, and on release it either springs back or slides out
+   * while the next one slides in. A quick flick is enough; a slow drag has to pass a third of the width. A swipe that
+   * starts in a field or in something that scrolls sideways stays there.
+   */
+  const pagesRef = useRef<HTMLDivElement>(null);
+  const [peek, setPeek] = useState<{ tab: "chats" | "status" | "calls"; dir: 1 | -1 } | null>(null);
+  const peekRef = useRef<{ tab: "chats" | "status" | "calls"; dir: 1 | -1 } | null>(null);
+  const tabRef = useRef(tab); tabRef.current = tab;
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const on = () => setPhone(mq.matches);
+    on(); mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  useEffect(() => {
+    const el = pagesRef.current;
+    if (!phone || !el || panel) return;
+    const order = ["chats", "status", "calls"] as const;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const EASE = "cubic-bezier(0.25, 1, 0.5, 1)";
+    let g: { x: number; y: number; lock: "x" | "y" | null; dx: number; vx: number; lastX: number; lastT: number } | null = null;
+    let animating = false;
+    const scrollsSideways = (n: EventTarget | null) => {
+      for (let e = n instanceof Element ? n : null; e && e !== el; e = e.parentElement) {
+        if (e.matches("input, textarea, select, [contenteditable=true], [role=slider]")) return true;
+        const ox = getComputedStyle(e).overflowX;
+        if ((ox === "auto" || ox === "scroll") && e.scrollWidth > e.clientWidth + 1) return true;
+      }
+      return false;
+    };
+    const place = (x: number, ms = 0, ease = EASE) => {
+      el.style.transition = ms ? `left ${ms}ms ${ease}, opacity ${ms}ms ${ease}` : "none";
+      el.style.left = `${x}px`;
+    };
+    const clear = () => { el.style.transition = ""; el.style.left = ""; };
+    clear();
+    const showPeek = (next: (typeof order)[number] | undefined, dir: 1 | -1) => {
+      if (reduced) return;
+      if (!next) { if (peekRef.current) { peekRef.current = null; flushSync(() => setPeek(null)); } return; }
+      if (peekRef.current?.tab === next) return;
+      const v = { tab: next, dir };
+      peekRef.current = v;
+      flushSync(() => setPeek(v));
+    };
+    const dropPeek = () => { peekRef.current = null; setPeek(null); };
+    const after = (ms: number, fn: () => void) => window.setTimeout(fn, ms);
+    /** iOS-style rubber band past the first / last section. */
+    const rubber = (x: number, w: number) => Math.sign(x) * (1 - 1 / ((Math.abs(x) * 0.55) / w + 1)) * w;
+
+    const down = (e: TouchEvent) => {
+      if (animating || e.touches.length !== 1 || scrollsSideways(e.target)) { g = null; return; }
+      const x = e.touches[0].clientX;
+      g = { x, y: e.touches[0].clientY, lock: null, dx: 0, vx: 0, lastX: x, lastT: performance.now() };
+    };
+    const move = (e: TouchEvent) => {
+      if (!g || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dx = t.clientX - g.x;
+      const dy = t.clientY - g.y;
+      if (!g.lock) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        g.lock = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+      }
+      if (g.lock !== "x") return;
+      e.preventDefault(); // the page moves sideways, so it must not scroll up / down at the same time
+      const now = performance.now();
+      const dt = Math.max(1, now - g.lastT);
+      g.vx = 0.8 * ((t.clientX - g.lastX) / dt) + 0.2 * g.vx;
+      g.lastX = t.clientX;
+      g.lastT = now;
+      g.dx = dx;
+      const i = order.indexOf(tabRef.current);
+      const edge = (dx > 0 && i === 0) || (dx < 0 && i === order.length - 1);
+      showPeek(edge ? undefined : order[i + (dx < 0 ? 1 : -1)], dx < 0 ? 1 : -1);
+      if (!reduced) place(edge ? rubber(dx, el.clientWidth) : dx);
+    };
+    const up = () => {
+      const s = g;
+      g = null;
+      if (!s || s.lock !== "x") return;
+      const w = el.clientWidth;
+      const i = order.indexOf(tabRef.current);
+      const dir = s.dx < 0 ? 1 : -1;
+      const next = order[i + dir];
+      const flick = Math.abs(s.vx) > 0.35 && Math.sign(s.vx) === Math.sign(s.dx);
+      const go = !!next && (Math.abs(s.dx) > w / 3 || flick);
+      if (!go) {
+        if (reduced) { clear(); dropPeek(); return; }
+        animating = true;
+        place(0, 380, "cubic-bezier(0.34, 1.3, 0.64, 1)"); // a soft spring back
+        after(390, () => { clear(); dropPeek(); animating = false; });
+        return;
+      }
+      if (reduced) { clear(); dropPeek(); setTab(next); return; }
+      animating = true;
+      // both pages glide on together until the next one fills the width; it then simply becomes the open section
+      const dist = w + PAGE_GAP;
+      const out = Math.min(300, Math.max(160, (dist - Math.abs(s.dx)) / Math.max(0.8, Math.abs(s.vx))));
+      showPeek(next, dir as 1 | -1);
+      place(-dir * dist, out);
+      after(out, () => {
+        el.style.transition = "none";
+        flushSync(() => { peekRef.current = null; setPeek(null); setTab(next); });
+        clear();
+        animating = false;
+      });
+    };
+    const cancel = () => {
+      if (g?.lock === "x" && !reduced) { animating = true; place(0, 300); after(310, () => { clear(); dropPeek(); animating = false; }); }
+      g = null;
+    };
+    el.addEventListener("touchstart", down, { passive: true });
+    el.addEventListener("touchmove", move, { passive: false });
+    el.addEventListener("touchend", up, { passive: true });
+    el.addEventListener("touchcancel", cancel, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", down); el.removeEventListener("touchmove", move);
+      el.removeEventListener("touchend", up); el.removeEventListener("touchcancel", cancel);
+      clear();
+    };
+  }, [phone, panel]);
   /** A sign-in QR code opened with the phone's own camera app (…/?link=<id>): go straight to approving it. */
   const [linkId, setLinkId] = useState<string | null>(null);
   useEffect(() => {
@@ -224,6 +360,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
 
   const handle = useCallback((e: ChatEvent) => {
     if (e.type === "call") { callRef.current?.signal(e); return; }
+    if (e.type === "status") { setStatusVersion((v) => v + 1); return; }
     const cid = e.conversationId;
     if (e.type === "typing" && cid && e.from) {
       setTyping((t) => ({ ...t, [cid]: { ...(t[cid] ?? {}), [e.from!]: Date.now() + 5000 } }));
@@ -512,6 +649,20 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
     flash(r === "granted" ? "Notifications are on." : "Notifications are blocked for this site.");
   }, [flash]);
 
+  /** One bottom-nav section's page. */
+  const renderTab = (which: "chats" | "status" | "calls") =>
+    which === "status" ? <StatusTab me={user} version={statusVersion} onError={flash} />
+    : which === "calls" ? (
+      <CallsPanel me={me} asTab onClose={() => setTab("chats")} onCall={(entry, video) => {
+        const c = convsRef.current.find((x) => x.id === entry.conversationId);
+        if (c) callRef.current?.start(c, video); else flash("Open a chat with them to call.");
+      }} />
+    ) : (
+      <Sidebar user={user} convs={convs} loaded={loaded} error={loadError} plain={plain} typing={typing} activeId={activeId} onOpen={open} onStartDirect={(id) => void startDirect(id)}
+            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} onLinkDevice={() => { setLinkId(null); setPanel("link"); }} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
+            onDeleteChat={setDeleting} onDeleteChats={removeChats} onMarkRead={markChatsRead} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
+    );
+
   /** Blocks or unblocks someone, then marks my one-to-one chat with them. */
   const setBlocked = async (userId: string, on: boolean) => {
     if (!userId) return;
@@ -527,11 +678,6 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
           <ProfilePanel user={user} onClose={() => setPanel(null)} onSaved={onUserChange} />
         ) : panel === "theme" ? (
           <ChatThemePanel onClose={() => setPanel(null)} />
-        ) : panel === "calls" ? (
-          <CallsPanel me={me} onClose={() => setPanel(null)} onCall={(entry, video) => {
-            const c = convsRef.current.find((x) => x.id === entry.conversationId);
-            if (c) callRef.current?.start(c, video); else flash("Open a chat with them to call.");
-          }} />
         ) : panel === "link" ? (
           <LinkDevicePanel initialId={linkId} onClose={() => { setPanel(null); setLinkId(null); }} />
         ) : panel === "blocked" ? (
@@ -539,10 +685,20 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
         ) : panel ? (
           <NewChat mode={panel} me={me} onClose={() => setPanel(null)} onMode={setPanel} onPick={(id) => void startDirect(id)} onCreateGroup={createGroup} />
         ) : (
-          <Sidebar user={user} convs={convs} loaded={loaded} error={loadError} plain={plain} typing={typing} activeId={activeId} onOpen={open} onStartDirect={(id) => void startDirect(id)}
-            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} onLinkDevice={() => { setLinkId(null); setPanel("link"); }} onCalls={() => setPanel("calls")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
-            onDeleteChat={setDeleting} onDeleteChats={removeChats} onMarkRead={markChatsRead} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
+          // the open section, and while a swipe is under way the next one beside it (as in To do)
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div ref={pagesRef} className="relative h-full">
+              {[{ t: tab, isPeek: false }, ...(peek && peek.tab !== tab ? [{ t: peek.tab, isPeek: true }] : [])].map(({ t: pt, isPeek }) => (
+                <div key={pt} aria-hidden={isPeek || undefined} {...(isPeek ? ({ inert: "" } as Record<string, string>) : {})}
+                  className={isPeek ? "pw-peek pointer-events-none absolute top-0 h-full w-full" : "h-full"}
+                  style={isPeek && peek ? { left: peek.dir > 0 ? `calc(100% + ${PAGE_GAP}px)` : `calc(-100% - ${PAGE_GAP}px)` } : undefined}>
+                  {renderTab(pt)}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
+        {!panel && <BottomNav tab={tab} onTab={setTab} unread={convs.filter((c) => c.unread > 0).length} />}
       </aside>
 
       <section className={cn("relative h-full min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
