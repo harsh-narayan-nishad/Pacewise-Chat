@@ -104,11 +104,11 @@ html, body {
    ===================================================================== */
 :root, :root[data-theme="dark"] {
   /* Apple blue: #0A84FF in dark (5.4:1); a touch deeper (#006AD6) in light, so blue text and links meet AA (4.8:1). */
-  --brand: 10 132 255; --tick-read: 10 132 255;
+  --brand: 10 132 255; --tick-read: 48 209 88;
   --bubble-out: 10 132 255; --bubble-in: 38 40 46; --chat-bg: 11 12 15;
 }
 :root[data-theme="light"] {
-  --brand: 0 106 214; --tick-read: 0 106 214;
+  --brand: 0 106 214; --tick-read: 30 150 62;
   --bubble-out: 0 122 255; --bubble-in: 255 255 255; --chat-bg: 244 244 244;
 }
 /*

@@ -7,7 +7,7 @@ import { fileLabel } from "@/lib/files";
 
 export type TickState = "sending" | "failed" | "sent" | "delivered" | "read";
 
-/** One tick: sent. Two grey: delivered to everyone. Two blue: read by everyone (members who joined later don't count). */
+/** One tick: sent. Two grey: delivered to everyone. Two green: read by everyone (members who joined later don't count). */
 export function tickState(m: Message, c: Conversation, me: string): TickState {
   if (m.status) return m.status;
   const others = c.members.filter((x) => x.id !== me && (!x.joinedAt || x.joinedAt <= m.createdAt));
@@ -17,13 +17,13 @@ export function tickState(m: Message, c: Conversation, me: string): TickState {
   return "sent";
 }
 
-export function Ticks({ state, className, onBrand = false }: { state: TickState; className?: string; /** On my blue bubble: white ticks, solid white when read. */ onBrand?: boolean }) {
+export function Ticks({ state, className, onBrand = false }: { state: TickState; className?: string; /** On my bubble: white ticks, bright green when read. */ onBrand?: boolean }) {
   const cls = cn("h-4 w-4 shrink-0", className);
   if (state === "sending") return <Clock3 className={cn(cls, "h-3.5 w-3.5 opacity-70")} aria-label="Sending" />;
   if (state === "failed") return null;
   if (state === "sent") return <Check className={cn(cls, "opacity-70")} aria-label="Sent" />;
   const read = state === "read";
-  return <CheckCheck className={cn(cls, onBrand ? (read ? "text-white" : "opacity-60") : read ? "text-tick" : "opacity-70")} strokeWidth={read ? 2.5 : 2} aria-label={read ? "Read" : "Delivered"} />;
+  return <CheckCheck className={cn(cls, onBrand ? (read ? "text-[#6BF59A]" : "opacity-60") : read ? "text-tick" : "opacity-70")} strokeWidth={read ? 2.5 : 2} aria-label={read ? "Read" : "Delivered"} />;
 }
 
 /** The one-line preview under a chat's name. */
