@@ -5,6 +5,8 @@ import { Sidebar } from "@/components/Sidebar";
 import { NewChat } from "@/components/NewChat";
 import { ProfilePanel } from "@/components/ProfilePanel";
 import { BlockedPanel, ChatThemePanel } from "@/components/ChatSettings";
+import { LinkDevicePanel } from "@/components/LinkDevicePanel";
+import { CallsPanel } from "@/components/CallsPanel";
 import { applyLook, loadLook } from "@/lib/look";
 import { useFullScreen } from "@/lib/fullscreen";
 import { ChatWindow } from "@/components/ChatWindow";
@@ -48,7 +50,17 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   const [threads, setThreads] = useState<Record<string, Thread>>({});
   const [plain, setPlain] = useState<Record<string, Plain>>({});
   const [typing, setTyping] = useState<Typing>({});
-  const [panel, setPanel] = useState<null | "chat" | "group" | "profile" | "theme" | "blocked">(null);
+  const [panel, setPanel] = useState<null | "chat" | "group" | "profile" | "theme" | "blocked" | "link" | "calls">(null);
+  /** A sign-in QR code opened with the phone's own camera app (…/?link=<id>): go straight to approving it. */
+  const [linkId, setLinkId] = useState<string | null>(null);
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    const id = u.searchParams.get("link");
+    if (!id) return;
+    u.searchParams.delete("link");
+    window.history.replaceState(window.history.state, "", u.pathname + u.search + u.hash);
+    setLinkId(id); setPanel("link");
+  }, []);
   /** The chat whose other person is about to be blocked (the confirmation is open). */
   const [blocking, setBlocking] = useState<Conversation | null>(null);
   useEffect(() => { applyLook(loadLook()); }, []);
@@ -60,6 +72,39 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   const threadsRef = useRef(threads); threadsRef.current = threads;
   const plainRef = useRef(plain); plainRef.current = plain;
   const activeRef = useRef(activeId); activeRef.current = activeId;
+
+  /**
+   * The phone's Back button (or back swipe) steps back inside Palk, as in To do: each layer that opens (a chat, a
+   * sidebar screen such as Profile or New chat, the contact info) gets its own browser history entry, and Back closes
+   * the top one: info, then the sidebar screen, then the chat. Only from the chat list does Back leave the app.
+   */
+  const panelRef = useRef(panel); panelRef.current = panel;
+  const infoRef = useRef(info); infoRef.current = info;
+  const pushed = useRef(0);
+  const skipPops = useRef(0);
+  const layers = (activeId ? 1 : 0) + (panel ? 1 : 0) + (info && activeId ? 1 : 0);
+  useEffect(() => {
+    if (layers > pushed.current) {
+      while (pushed.current < layers) window.history.pushState({ palk: ++pushed.current }, "");
+    } else if (layers < pushed.current) {
+      // closed with an on-screen button: take its history entries back off too, so Back stays in step
+      const n = pushed.current - layers;
+      pushed.current = layers;
+      skipPops.current += 1;
+      window.history.go(-n);
+    }
+  }, [layers]);
+  useEffect(() => {
+    const onPop = () => {
+      if (skipPops.current > 0) { skipPops.current -= 1; return; }
+      pushed.current = Math.max(0, pushed.current - 1);
+      if (infoRef.current && activeRef.current) setInfo(false);
+      else if (panelRef.current) setPanel(null);
+      else if (activeRef.current) setActiveId(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const active = convs.find((c) => c.id === activeId) ?? null;
 
   const flash = useCallback((m: string) => { setToast(m); window.setTimeout(() => setToast(null), 3500); }, []);
@@ -263,7 +308,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
 
   // Unread count in the tab title.
   const unread = convs.reduce((a, c) => a + (c.unread > 0 ? 1 : 0), 0);
-  useEffect(() => { document.title = unread ? `(${unread}) Pacewise Chat` : "Pacewise Chat"; }, [unread]);
+  useEffect(() => { document.title = unread ? `(${unread}) Palk` : "Palk"; }, [unread]);
 
   // ---- browser notifications (only when allowed, and only while the tab is in the background) ----
   function notify(m: Message) {
@@ -379,6 +424,24 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
     flash(scope === "everyone" ? "Chat deleted for everyone." : c.type === "group" ? "You exited and deleted the group." : "Chat deleted.");
     soon(600);
   }, [flash, soon]);
+  /** Selected chats (the list's select mode): delete them all for me, one after another, with one message at the end. */
+  const removeChats = useCallback(async (cs: Conversation[]) => {
+    for (const c of cs) {
+      await chatApi.deleteChat(c.id, "me");
+      setConvs((list) => list.filter((x) => x.id !== c.id));
+      setThreads((t) => { const n = { ...t }; delete n[c.id]; return n; });
+      if (activeRef.current === c.id) { setActiveId(null); setInfo(false); }
+    }
+    flash(cs.length === 1 ? "Chat deleted." : `${cs.length} chats deleted.`);
+    soon(600);
+  }, [flash, soon]);
+  /** Selected chats: mark them all as read. */
+  const markChatsRead = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    const now = new Date().toISOString();
+    setConvs((cs) => cs.map((x) => (ids.includes(x.id) ? { ...x, unread: 0, members: x.members.map((m) => (m.id === me ? { ...m, lastReadAt: now } : m)) } : x)));
+    for (const id of ids) void chatApi.read(id).catch(() => undefined);
+  }, [me]);
   /** Delete a chat: for me by default; a checkbox deletes it for everyone (one-to-one chats, and groups I run). */
   const deleteChoices = (c: Conversation): { title: string; body: string; me: DeleteChoice; everyone?: EveryoneChoice } => {
     const name = titleOf(c, me);
@@ -458,20 +521,27 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   };
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas pt-[max(env(safe-area-inset-top),12px)] md:pt-0">
       <aside className={cn("relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[360px] lg:w-[400px]", activeId ? "hidden" : "flex")}>
         {panel === "profile" ? (
           <ProfilePanel user={user} onClose={() => setPanel(null)} onSaved={onUserChange} />
         ) : panel === "theme" ? (
           <ChatThemePanel onClose={() => setPanel(null)} />
+        ) : panel === "calls" ? (
+          <CallsPanel me={me} onClose={() => setPanel(null)} onCall={(entry, video) => {
+            const c = convsRef.current.find((x) => x.id === entry.conversationId);
+            if (c) callRef.current?.start(c, video); else flash("Open a chat with them to call.");
+          }} />
+        ) : panel === "link" ? (
+          <LinkDevicePanel initialId={linkId} onClose={() => { setPanel(null); setLinkId(null); }} />
         ) : panel === "blocked" ? (
           <BlockedPanel onClose={() => setPanel(null)} onUnblock={(id) => setBlocked(id, false)} />
         ) : panel ? (
           <NewChat mode={panel} me={me} onClose={() => setPanel(null)} onMode={setPanel} onPick={(id) => void startDirect(id)} onCreateGroup={createGroup} />
         ) : (
           <Sidebar user={user} convs={convs} loaded={loaded} error={loadError} plain={plain} typing={typing} activeId={activeId} onOpen={open} onStartDirect={(id) => void startDirect(id)}
-            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
-            onDeleteChat={setDeleting} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
+            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} onLinkDevice={() => { setLinkId(null); setPanel("link"); }} onCalls={() => setPanel("calls")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
+            onDeleteChat={setDeleting} onDeleteChats={removeChats} onMarkRead={markChatsRead} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
         )}
       </aside>
 

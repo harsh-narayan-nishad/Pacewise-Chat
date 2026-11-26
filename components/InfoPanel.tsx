@@ -204,7 +204,7 @@ function Verify({ member, identity, me }: { member: Member; identity: Identity; 
         <p className="mt-3 text-lg text-ink">You and {member.name}</p>
       </div>
       {!member.publicKey ? (
-        <p className="mt-8 text-center text-sm text-ink-muted">{member.name.split(" ")[0]} hasn&apos;t opened Pacewise Chat yet, so there is no code to compare.</p>
+        <p className="mt-8 text-center text-sm text-ink-muted">{member.name.split(" ")[0]} hasn&apos;t opened Palk yet, so there is no code to compare.</p>
       ) : code && prints ? (
         <>
           <div className="mx-auto mt-8 grid max-w-xs grid-cols-4 gap-x-4 gap-y-3 font-mono text-lg tracking-wider text-ink">

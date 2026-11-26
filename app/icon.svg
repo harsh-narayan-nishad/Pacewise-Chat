@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Pacewise Chat: dark canvas tile, square corners like the app, a speech bubble in the chat green. -->
-  <rect width="32" height="32" fill="#0B0C0E"/>
-  <path d="M7 8.5h18v12H14l-5 4.5v-4.5H7z" fill="none" stroke="#25D366" stroke-width="2.4" stroke-linejoin="miter"/>
-  <path d="M11.5 14.5h9" stroke="#EDEEF0" stroke-opacity="0.45" stroke-width="2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Palk: an original mark. A teal rounded tile; a white chat bubble with its tail at the lower right; a simple profile nose (a slanted bridge, a soft rounded tip and a short base) in the same teal. -->
+  <defs>
+    <linearGradient id="t" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16AFA6"/>
+      <stop offset="1" stop-color="#0B7F79"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#t)"/>
+  <path d="M31 12.5c10.5 0 19 7.9 19 17.7 0 4.6-1.9 8.8-5 12 .3 2.7 1.6 5 3.6 6.6.5.4.2 1.2-.4 1.2-3.9 0-7.3-1.5-9.6-3.6-2.3.8-4.9 1.3-7.6 1.3-10.5 0-19-7.9-19-17.6S20.5 12.5 31 12.5z" fill="#fff"/>
+  <path d="M32.7 24.2c-.3 3.9-1.6 7-3.8 9.4-.6.7-.2 1.8.7 1.9 1.9.3 3.6 0 5.1-.8" fill="none" stroke="#0B7F79" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

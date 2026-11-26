@@ -845,7 +845,7 @@ export const CallLayer = forwardRef<
             : `${peer.name} is calling`;
         try {
           new Notification(title, {
-            body: `Pacewise Chat · ${video ? "video" : "audio"} call`,
+            body: `Palk · ${video ? "video" : "audio"} call`,
             tag: `call-${s.callId}`,
           });
         } catch {

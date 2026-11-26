@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { QrCode } from "lucide-react";
+import { QrSignIn } from "@/components/QrSignIn";
 import { Logo } from "@/components/Logo";
 import { ApiError, googleLogin, login, logout, PACEWISE_URL, type User } from "@/lib/api";
 import { Button } from "@/components/ui";
@@ -15,6 +17,8 @@ export function LoginCard({ onSignedIn }: { onSignedIn: (u: User) => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Phones: the QR code opens under the form when asked for (computers always show it on the right). */
+  const [qrOpen, setQrOpen] = useState(false);
 
   async function run(signIn: () => Promise<User>) {
     if (busy) return;
@@ -51,16 +55,20 @@ export function LoginCard({ onSignedIn }: { onSignedIn: (u: User) => void }) {
               {error && <p className="text-sm text-accent-extreme" role="alert">{error}</p>}
               <Button type="submit" size="lg" disabled={busy} className="mt-1 h-14 w-full text-base">{busy && <ButtonWheel />}{busy ? "Please wait…" : "Sign in"}</Button>
             </form>
+            <button type="button" onClick={() => setQrOpen((v) => !v)} aria-expanded={qrOpen}
+              className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-ink underline-offset-4 hover:underline lg:hidden">
+              <QrCode className="h-4 w-4" /> {qrOpen ? "Hide QR code" : "Sign in with a QR code"}
+            </button>
+            {qrOpen && <QrSignIn onSignedIn={onSignedIn} className="mt-6 lg:hidden" />}
             <p className="mt-6 text-sm text-ink-muted">
               No account yet? <a href={PACEWISE_URL} target="_blank" rel="noopener noreferrer" className="text-ink underline underline-offset-4 hover:text-accent-medium">Create one in Pacewise</a>.
             </p>
           </div>
         </div>
       </div>
-      <div aria-hidden className="hidden h-full items-center justify-center overflow-hidden lg:flex">
-        <svg viewBox="0 0 420 520" className="h-[78vh] w-auto text-ink">
-          <text x="210" y="470" textAnchor="middle" fontSize="640" fontWeight="700" fill="none" stroke="currentColor" strokeOpacity="0.28" strokeWidth="2" style={{ fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif" }}>P</text>
-        </svg>
+      {/* Computers: sign in by scanning this code with a phone where Palk is signed in (as WhatsApp Web). */}
+      <div className="hidden h-full items-center justify-center overflow-y-auto border-l border-overlay/10 px-8 lg:flex">
+        <QrSignIn onSignedIn={onSignedIn} />
       </div>
     </main>
   );

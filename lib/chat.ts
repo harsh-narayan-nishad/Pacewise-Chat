@@ -53,6 +53,12 @@ export interface Conversation {
   /** A one-to-one chat with someone I blocked. */
   blockedByMe?: boolean;
 }
+/** One entry in my call history. */
+export interface CallLogEntry {
+  id: string; callId: string; conversationId: string; direction: "out" | "in"; video: boolean;
+  outcome: "ringing" | "answered" | "missed" | "declined" | "busy" | "unanswered" | "cancelled";
+  startedAt: string; answeredAt: string | null; endedAt: string | null; seconds: number; peers: CallPerson[];
+}
 export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call"; conversationId?: string; from?: string; data?: unknown }
 /** One audio-call message between the two browsers (relayed by the server, never stored). */
 export interface CallPerson { id: string; name: string; username?: string; avatarUrl: string | null }
@@ -101,6 +107,9 @@ export const chatApi = {
   /** Calls with more people: setup messages to one person in the call, and joining a call I was added to. */
   peerCall: (callId: string, body: PeerSignal) => api<void>(`/chat/calls/${encodeURIComponent(callId)}/signal`, { method: "POST", body }),
   joinCall: (callId: string) => api<{ people: CallPerson[] }>(`/chat/calls/${encodeURIComponent(callId)}/join`, { method: "POST" }),
+  /** My call history (Calls), newest first; and clearing it (mine only). */
+  calls: () => api<CallLogEntry[]>("/chat/calls"),
+  clearCalls: () => api<void>("/chat/calls", { method: "DELETE" }),
   /** Report a person (spam, harassment …): it goes to the Pacewise admins' Reports. */
   report: (userId: string, reason: ReportReason, details: string) => api<{ id: string; status: string }>("/reports", { method: "POST", body: { targetType: "user", targetId: userId, reason, details } }),
 };

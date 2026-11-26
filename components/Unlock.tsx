@@ -59,7 +59,7 @@ export function Unlock({ stored, onUnlocked, onSignOut }: { stored: StoredKeys |
         <p className="mb-8 text-sm text-ink-muted">
           {mode === "setup" && "Messages are end-to-end encrypted: only the people in a chat can read them, not even Pacewise. Choose a chat passcode. You need it to open your chats on another device."}
           {mode === "unlock" && "Enter your chat passcode to open your encrypted chats on this device."}
-          {mode === "reset" && "You get new encryption keys. Chats you are in become readable again as soon as someone else in each chat opens Pacewise Chat."}
+          {mode === "reset" && "You get new encryption keys. Chats you are in become readable again as soon as someone else in each chat opens Palk."}
         </p>
         <form onSubmit={(e) => { e.preventDefault(); void submit(); }} className="flex flex-col gap-4">
           <PasswordInput value={code} onChange={(e) => setCode(e.target.value)} placeholder={creating ? "New chat passcode" : "Chat passcode"} autoComplete={creating ? "new-password" : "current-password"} autoFocus required className={BOX} />

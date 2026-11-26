@@ -38,7 +38,7 @@ export function ReportDialog({ conv, me, recentFrom, onClose, onDone, onDeleteCh
     if (!person || busy) return;
     setBusy(true); setError(null);
     const where = isGroup ? `the group "${conv.name}"` : "a one-to-one chat";
-    let details = `Reported from Pacewise Chat, in ${where}.`;
+    let details = `Reported from Palk, in ${where}.`;
     if (note.trim()) details += `\nNote: ${note.trim()}`;
     if (include && recent.length) details += `\nLast messages from them (shared by the reporter):\n${recent.map((t) => `- ${t.replace(/\s+/g, " ").slice(0, 160)}`).join("\n")}`;
     try {

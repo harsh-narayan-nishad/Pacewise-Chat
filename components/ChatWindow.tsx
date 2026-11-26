@@ -26,6 +26,60 @@ function Linked({ text, onBrand = false }: { text: string; onBrand?: boolean }) 
  * One open chat: the header (who, online / last seen / typing…), the messages on the chat wallpaper (day chips,
  * bubbles with time and ticks, replies, deleted messages, group events), and the composer.
  */
+/**
+ * Touch gestures on a message, as in other chat apps:
+ *  - press and hold (about half a second, without moving) opens its options; a small vibration confirms it;
+ *  - swipe it to the right to reply: the bubble follows the finger, a reply arrow fades in, and letting go past the
+ *    mark starts a reply (the bubble springs back either way).
+ */
+const touch: { id?: number; x: number; y: number; fired: boolean; swiping: boolean; dx: number; bubble: HTMLElement | null; icon: HTMLElement | null } =
+  { x: 0, y: 0, fired: false, swiping: false, dx: 0, bubble: null, icon: null };
+const SWIPE_REPLY = 56;
+function gestures(open: (x: number, y: number) => void, reply: (() => void) | null) {
+  const cancel = () => { window.clearTimeout(touch.id); touch.id = undefined; };
+  const settle = () => {
+    const { bubble, icon } = touch;
+    if (bubble) { bubble.style.transition = "transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)"; bubble.style.transform = ""; window.setTimeout(() => { bubble.style.transition = ""; }, 240); }
+    if (icon) { icon.style.transition = "opacity 0.15s"; icon.style.opacity = "0"; }
+  };
+  return {
+    onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
+      cancel();
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      Object.assign(touch, { x: t.clientX, y: t.clientY, fired: false, swiping: false, dx: 0,
+        bubble: e.currentTarget.querySelector<HTMLElement>('[id^="msg-"]'), icon: e.currentTarget.querySelector<HTMLElement>("[data-swipe-icon]") });
+      touch.id = window.setTimeout(() => {
+        touch.fired = true; touch.id = undefined;
+        try { navigator.vibrate?.(12); } catch { /* not supported */ }
+        open(touch.x, touch.y);
+      }, 480);
+    },
+    onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
+      const t = e.touches[0];
+      if (!t) return;
+      const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+      if (Math.hypot(dx, dy) > 10) cancel(); // moving: not a press
+      if (!reply || touch.fired) return;
+      if (!touch.swiping && dx > 12 && dx > Math.abs(dy) * 1.5) touch.swiping = true;
+      if (!touch.swiping) return;
+      touch.dx = Math.max(0, dx);
+      const d = touch.dx < SWIPE_REPLY ? touch.dx : SWIPE_REPLY + (touch.dx - SWIPE_REPLY) * 0.25; // a little resistance past the mark
+      if (touch.bubble) { touch.bubble.style.transition = ""; touch.bubble.style.transform = `translateX(${Math.min(d, 90)}px)`; }
+      if (touch.icon) { touch.icon.style.transition = ""; touch.icon.style.opacity = String(Math.min(1, touch.dx / SWIPE_REPLY)); }
+    },
+    onTouchEnd: (e: React.TouchEvent<HTMLElement>) => {
+      cancel();
+      if (touch.swiping) {
+        if (touch.dx >= SWIPE_REPLY && reply) { try { navigator.vibrate?.(10); } catch { /* not supported */ } reply(); }
+        settle(); touch.swiping = false; e.preventDefault(); return;
+      }
+      if (touch.fired) { e.preventDefault(); touch.fired = false; }
+    },
+    onTouchCancel: () => { cancel(); if (touch.swiping) { settle(); touch.swiping = false; } },
+  };
+}
+
 export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, onInfo, onSend, onRetry, onDelete, onDeleteChat, onOlder, onTyping, onCopied, onCall, onReport, onBlock }: {
   conv: Conversation; me: string; thread: Thread | undefined; plain: Record<string, Plain>; typing: Record<string, number>; hasKey: boolean;
   onBack: () => void; onInfo: () => void; onSend: (text: string, replyTo: string | null, file?: File) => Promise<void>; onRetry: (m: Message) => void; onDelete: (m: Message, scope: "me" | "everyone") => Promise<void>; onDeleteChat: () => void;
@@ -199,10 +253,18 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
             return (
               <Fragment key={m.id}>
                 {chip}
-                <div className={cn("group flex", mine ? "justify-end" : "justify-start", startsRun ? "mt-2" : "mt-0.5")}
-                  onContextMenu={(e) => { e.preventDefault(); setMenu({ m, x: e.clientX, y: e.clientY }); }}>
+                <div className={cn("group relative flex touch-pan-y [-webkit-touch-callout:none] [@media(hover:none)]:select-none", mine ? "justify-end" : "justify-start", startsRun ? "mt-2" : "mt-0.5")}
+                  onContextMenu={(e) => { e.preventDefault(); setMenu({ m, x: e.clientX, y: e.clientY }); }}
+                  {...gestures((x, y) => setMenu({ m, x, y }), m.deleted ? null : () => setReply(m))}>
+                  {/* the reply arrow that fades in while the message is swiped to the right */}
+                  {!m.deleted && <span data-swipe-icon className="pointer-events-none absolute left-1 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-overlay/10 text-ink-muted opacity-0" aria-hidden><CornerUpLeft className="h-4 w-4" /></span>}
                   {/* No tails: a run of messages stacks, with tighter corners on the side they come from. */}
-                  <div id={`msg-${m.id}`} className={cn("relative max-w-[82%] rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
+                  <div id={`msg-${m.id}`}
+                    onClick={(e) => {
+                      if ((e.target as Element).closest("a, button, input, audio, img") || (window.getSelection()?.toString() ?? "")) return;
+                      setMenu({ m, x: e.clientX, y: e.clientY });
+                    }}
+                    className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
                     // A deleted message is a quiet placeholder: an outline, no colour fill (mine or theirs).
                     m.deleted ? "border border-overlay/15 bg-transparent text-ink-muted" : mine ? "bubble-mine" : "bubble-theirs text-ink",
                     mine ? [!startsRun && "rounded-tr-[6px]", !endsRun && "rounded-br-[6px]"] : [!startsRun && "rounded-tl-[6px]", !endsRun && "rounded-bl-[6px]"])}>
@@ -234,13 +296,14 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                       {state && !m.deleted && <Ticks state={state} onBrand />}
                       {state === "failed" && <AlertCircle className="h-3.5 w-3.5 text-accent-extreme" aria-label="Not sent" />}
                     </span>
-                    {(
-                      <button type="button" aria-label="Message options" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ m, x: r.left, y: r.bottom }); }}
-                        className={cn("absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-overlay/10 text-ink-muted opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
+                    {!m.deleted && (
+                      <button type="button" aria-label="Reply" title="Reply" onClick={() => setReply(m)}
+                        className={cn("absolute top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-overlay/10 text-ink-muted opacity-0 transition-opacity hover:text-ink group-hover:opacity-100 focus-visible:opacity-100",
                           // just outside the bubble (left of mine, right of theirs): it never covers the text, time or ticks
-                          mine ? "-left-8" : "-right-8",
-                          "[@media(hover:none)]:opacity-70")}>
-                        <ChevronDown className="h-4 w-4" />
+                          mine ? "-left-9" : "-right-9",
+                          // touch screens: swipe the message to the right to reply instead
+                          "[@media(hover:none)]:hidden")}>
+                        <CornerUpLeft className="h-4 w-4" />
                       </button>
                     )}
                     {state === "failed" && <button type="button" onClick={() => onRetry(m)} className="mt-1 block px-1 text-xs font-semibold text-white underline underline-offset-2">Not sent. Tap to retry</button>}
@@ -269,8 +332,8 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
         <div className="pw-bar flex shrink-0 items-start gap-2 border-t border-overlay/10 px-4 py-2 text-xs text-ink-muted">
           <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-fast" />
           {!hasKey
-            ? "Waiting for this chat's encryption key. It arrives as soon as another member opens Pacewise Chat."
-            : `${waitingFor} hasn't opened Pacewise Chat yet. Your messages stay encrypted; they can read them once they open it while you are online.`}
+            ? "Waiting for this chat's encryption key. It arrives as soon as another member opens Palk."
+            : `${waitingFor} hasn't opened Palk yet. Your messages stay encrypted; they can read them once they open it while you are online.`}
         </div>
       )}
 
