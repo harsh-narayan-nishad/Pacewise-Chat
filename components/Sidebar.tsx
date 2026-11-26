@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronDown, ChevronRight, Lock, LogOut, Moon, MoreHorizontal, Palette, Search, SquarePen, Sun, Trash2, UserX, Users, X } from "lucide-react";
+import { Bell, ChevronDown, ChevronRight, Maximize, Minimize, Lock, LogOut, Moon, MoreHorizontal, Palette, Search, SquarePen, Sun, Trash2, UserX, Users, X } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import LiquidGlass from "@/components/LiquidGlass";
 import { Preview, TypingDots } from "@/components/bits";
@@ -15,7 +15,7 @@ type Filter = "all" | "unread" | "groups";
 export function Sidebar(props: {
   user: User; convs: Conversation[]; loaded: boolean; error: string | null; plain: Record<string, Plain>; typing: Typing; activeId: string | null;
   onOpen: (id: string) => void; onStartDirect: (userId: string) => void; onNewChat: () => void; onNewGroup: () => void; onDeleteChat: (c: Conversation) => void;
-  light: boolean; setLight: (v: boolean) => void; onProfile: () => void; onTheme: () => void; onBlocked: () => void; onLock: () => void; onSignOut: () => void; notificationsAllowed: boolean; onAskNotifications: () => void;
+  light: boolean; setLight: (v: boolean) => void; onProfile: () => void; fullScreen: { canFull: boolean; on: boolean; toggleFull: () => void }; onTheme: () => void; onBlocked: () => void; onLock: () => void; onSignOut: () => void; notificationsAllowed: boolean; onAskNotifications: () => void;
 }) {
   const { user, convs, plain, typing, activeId, onOpen } = props;
   const me = user.id;
@@ -133,6 +133,7 @@ export function Sidebar(props: {
                     <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onNewGroup(); }}><span className="flex-1">New group</span><Users className={icon} strokeWidth={1.75} /></button>
                     {!props.notificationsAllowed && <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onAskNotifications(); }}><span className="flex-1">Turn on notifications</span><Bell className={icon} strokeWidth={1.75} /></button>}
                     <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.setLight(!props.light); }}><span className="flex-1">{props.light ? "Dark" : "Light"} theme</span>{props.light ? <Moon className={icon} strokeWidth={1.75} /> : <Sun className={icon} strokeWidth={1.75} />}</button>
+                    {props.fullScreen.canFull && <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { props.fullScreen.toggleFull(); setMenu(false); }}><span className="flex-1">Full screen</span><span className="text-[15px] text-ink-muted">{props.fullScreen.on ? "On" : "Off"}</span>{props.fullScreen.on ? <Minimize className={icon} strokeWidth={1.75} /> : <Maximize className={icon} strokeWidth={1.75} />}</button>}
                     <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onTheme(); }}><span className="flex-1">Chat theme</span><Palette className={icon} strokeWidth={1.75} /></button>
                     <button role="menuitem" className={cn(item, "border-b border-overlay/10")} onClick={() => { setMenu(false); props.onBlocked(); }}><span className="flex-1">Blocked contacts</span><UserX className={icon} strokeWidth={1.75} /></button>
                     <button role="menuitem" className={item} onClick={() => { setMenu(false); props.onLock(); }}><span className="flex-1">Lock chats</span><Lock className={icon} strokeWidth={1.75} /></button>

@@ -6,6 +6,7 @@ import { NewChat } from "@/components/NewChat";
 import { ProfilePanel } from "@/components/ProfilePanel";
 import { BlockedPanel, ChatThemePanel } from "@/components/ChatSettings";
 import { applyLook, loadLook } from "@/lib/look";
+import { useFullScreen } from "@/lib/fullscreen";
 import { ChatWindow } from "@/components/ChatWindow";
 import { InfoPanel } from "@/components/InfoPanel";
 import { Logo } from "@/components/Logo";
@@ -51,6 +52,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   /** The chat whose other person is about to be blocked (the confirmation is open). */
   const [blocking, setBlocking] = useState<Conversation | null>(null);
   useEffect(() => { applyLook(loadLook()); }, []);
+  const fullScreen = useFullScreen();
   const [info, setInfo] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -468,7 +470,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
           <NewChat mode={panel} me={me} onClose={() => setPanel(null)} onMode={setPanel} onPick={(id) => void startDirect(id)} onCreateGroup={createGroup} />
         ) : (
           <Sidebar user={user} convs={convs} loaded={loaded} error={loadError} plain={plain} typing={typing} activeId={activeId} onOpen={open} onStartDirect={(id) => void startDirect(id)}
-            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
+            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
             onDeleteChat={setDeleting} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
         )}
       </aside>
