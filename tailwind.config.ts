@@ -24,7 +24,12 @@ const config: Config = {
         canvas: { DEFAULT: "rgb(var(--canvas) / <alpha-value>)", raised: "rgb(var(--canvas-raised) / <alpha-value>)" },
         ink: { DEFAULT: "rgb(var(--ink) / <alpha-value>)", muted: "rgb(var(--ink-muted) / <alpha-value>)", faint: "rgb(var(--ink-faint) / <alpha-value>)" },
         overlay: "rgb(var(--overlay) / <alpha-value>)",
-        accent: { slow: "#5FA8D3", medium: "#7FC97F", fast: "#E8B84B", extreme: "#E05B5B" },
+        // Semantic colours (theme-aware, see globals.css). The older accent names point at them, so every use follows.
+        success: "rgb(var(--success) / <alpha-value>)",
+        warning: "rgb(var(--warning) / <alpha-value>)",
+        danger: "rgb(var(--danger) / <alpha-value>)",
+        info: "rgb(var(--info) / <alpha-value>)",
+        accent: { slow: "rgb(var(--info) / <alpha-value>)", medium: "rgb(var(--success) / <alpha-value>)", fast: "rgb(var(--warning) / <alpha-value>)", extreme: "rgb(var(--danger) / <alpha-value>)" },
         // Chat: the green, read ticks, and the two bubble colours (theme-aware, see globals.css).
         brand: "rgb(var(--brand) / <alpha-value>)",
         tick: "rgb(var(--tick-read) / <alpha-value>)",

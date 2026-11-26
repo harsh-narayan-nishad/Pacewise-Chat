@@ -3,14 +3,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { NewChat } from "@/components/NewChat";
+import { ProfilePanel } from "@/components/ProfilePanel";
+import { BlockedPanel, ChatThemePanel } from "@/components/ChatSettings";
+import { applyLook, loadLook } from "@/lib/look";
 import { ChatWindow } from "@/components/ChatWindow";
 import { InfoPanel } from "@/components/InfoPanel";
 import { Logo } from "@/components/Logo";
-import { DeleteDialog, type DeleteChoice } from "@/components/DeleteDialog";
+import { DeleteDialog, type DeleteChoice, type EveryoneChoice } from "@/components/DeleteDialog";
 import { CallLayer, type CallHandle } from "@/components/CallLayer";
 import { ReportDialog } from "@/components/ReportDialog";
 import { ApiError, type User } from "@/lib/api";
-import { chatApi, streamUrl, titleOf, type ChatEvent, type Conversation, type Message } from "@/lib/chat";
+import { chatApi, otherOf, streamUrl, titleOf, type ChatEvent, type Conversation, type Message } from "@/lib/chat";
 import { decryptMessage, encryptFile, encryptMessage, type FileMeta, type Identity } from "@/lib/crypto";
 import { fileLabel } from "@/lib/files";
 import { Keyring } from "@/lib/keyring";
@@ -32,8 +35,8 @@ const byRecent = (a: Conversation, b: Conversation) => b.lastMessageAt.localeCom
  * info on the far right. Live updates come over Server-Sent Events, with a 20-second check as a fallback (which also
  * keeps my "online" status fresh for the others). Everything is decrypted here, in the browser.
  */
-export function Messenger({ user, identity, light, setLight, onLock, onSignOut }: {
-  user: User; identity: Identity; light: boolean; setLight: (v: boolean) => void; onLock: () => void; onSignOut: () => void;
+export function Messenger({ user, identity, light, setLight, onLock, onSignOut, onUserChange }: {
+  user: User; identity: Identity; light: boolean; setLight: (v: boolean) => void; onLock: () => void; onSignOut: () => void; onUserChange: (u: User) => void;
 }) {
   const me = user.id;
   const ring = useMemo(() => new Keyring(identity, me), [identity, me]);
@@ -44,7 +47,10 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
   const [threads, setThreads] = useState<Record<string, Thread>>({});
   const [plain, setPlain] = useState<Record<string, Plain>>({});
   const [typing, setTyping] = useState<Typing>({});
-  const [panel, setPanel] = useState<null | "chat" | "group">(null);
+  const [panel, setPanel] = useState<null | "chat" | "group" | "profile" | "theme" | "blocked">(null);
+  /** The chat whose other person is about to be blocked (the confirmation is open). */
+  const [blocking, setBlocking] = useState<Conversation | null>(null);
+  useEffect(() => { applyLook(loadLook()); }, []);
   const [info, setInfo] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -371,16 +377,26 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
     flash(scope === "everyone" ? "Chat deleted for everyone." : c.type === "group" ? "You exited and deleted the group." : "Chat deleted.");
     soon(600);
   }, [flash, soon]);
-  const deleteChoices = (c: Conversation): { title: string; body: string; choices: DeleteChoice[] } => {
+  /** Delete a chat: for me by default; a checkbox deletes it for everyone (one-to-one chats, and groups I run). */
+  const deleteChoices = (c: Conversation): { title: string; body: string; me: DeleteChoice; everyone?: EveryoneChoice } => {
     const name = titleOf(c, me);
-    const everyone = c.type === "direct" || c.myRole === "admin";
-    const choices: DeleteChoice[] = [];
-    if (everyone) choices.push({ label: "Delete for everyone", run: () => removeChat(c, "everyone") });
-    choices.push({ label: c.type === "group" ? "Exit and delete for me" : "Delete for me", run: () => removeChat(c, "me") });
-    const body = c.type === "group"
-      ? `Delete for me: you exit the group and it leaves your list.${everyone ? " Delete for everyone: the group and all its messages are deleted for every member." : " Only group admins can delete it for everyone."}`
-      : "Delete for me: it leaves your list (it comes back if a new message arrives). Delete for everyone: the chat and all its messages are deleted for both of you.";
-    return { title: c.type === "group" ? `Delete "${name}"?` : `Delete chat with ${name}?`, body, choices };
+    const group = c.type === "group";
+    const canAll = !group || c.myRole === "admin";
+    return {
+      title: group ? `Delete “${name}”?` : `Delete chat with ${name}?`,
+      body: group
+        ? `You will leave this group, and it will be removed from your chat list.${canAll ? "" : " Only group admins can delete it for all members."}`
+        : "This chat will be removed from your chat list. It will reappear if you receive a new message.",
+      me: { label: group ? "Leave Group" : "Delete", run: () => removeChat(c, "me") },
+      everyone: canAll ? {
+        label: group ? "Delete for All Members" : "Delete for Everyone",
+        hint: group
+          ? "The group and its entire message history will be permanently deleted for every member."
+          : `All messages will be permanently deleted for you and ${name.split(" ")[0]}.`,
+        confirm: group ? "Delete Group" : "Delete for All",
+        run: () => removeChat(c, "everyone"),
+      } : undefined,
+    };
   };
 
   const lastTyping = useRef(0);
@@ -431,25 +447,39 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
     flash(r === "granted" ? "Notifications are on." : "Notifications are blocked for this site.");
   }, [flash]);
 
+  /** Blocks or unblocks someone, then marks my one-to-one chat with them. */
+  const setBlocked = async (userId: string, on: boolean) => {
+    if (!userId) return;
+    await (on ? chatApi.block(userId) : chatApi.unblock(userId));
+    setConvs((cs) => cs.map((c) => (c.type === "direct" && otherOf(c, me)?.id === userId ? { ...c, blockedByMe: on } : c)));
+    flash(on ? "Contact blocked." : "Contact unblocked.");
+  };
+
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas">
       <aside className={cn("relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[360px] lg:w-[400px]", activeId ? "hidden" : "flex")}>
-        {panel ? (
+        {panel === "profile" ? (
+          <ProfilePanel user={user} onClose={() => setPanel(null)} onSaved={onUserChange} />
+        ) : panel === "theme" ? (
+          <ChatThemePanel onClose={() => setPanel(null)} />
+        ) : panel === "blocked" ? (
+          <BlockedPanel onClose={() => setPanel(null)} onUnblock={(id) => setBlocked(id, false)} />
+        ) : panel ? (
           <NewChat mode={panel} me={me} onClose={() => setPanel(null)} onMode={setPanel} onPick={(id) => void startDirect(id)} onCreateGroup={createGroup} />
         ) : (
           <Sidebar user={user} convs={convs} loaded={loaded} error={loadError} plain={plain} typing={typing} activeId={activeId} onOpen={open} onStartDirect={(id) => void startDirect(id)}
-            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
+            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
             onDeleteChat={setDeleting} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
         )}
       </aside>
 
       <section className={cn("relative h-full min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
         {active ? (
-          <ChatWindow key={active.id} onCall={(video) => callRef.current?.start(active, video)} onReport={() => setReporting(active)} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
+          <ChatWindow key={active.id} onCall={(video) => callRef.current?.start(active, video)} onReport={() => setReporting(active)} onBlock={(on) => (on ? setBlocking(active) : void setBlocked(otherOf(active, me)?.id ?? "", false).catch((e) => flash(e instanceof Error ? e.message : "Could not unblock.")))} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
             onBack={() => { setActiveId(null); setInfo(false); }} onInfo={() => setInfo(true)} onSend={send} onRetry={(m) => void retry(m)} onDelete={remove} onDeleteChat={() => setDeleting(active)}
             onOlder={() => loadOlder(active.id)} onTyping={typed} onCopied={() => flash("Message copied.")} />
         ) : (
-          <div className="chat-wallpaper flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+          <div className="chat-wallpaper chat-aurora flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
             <Logo size="lg" />
             <p className="max-w-sm text-sm text-ink-muted">Send and receive messages with anyone on Pacewise. Pick a chat, or start a new one.</p>
             <p className="absolute bottom-8 flex items-center gap-1.5 text-xs text-ink-faint"><Lock className="h-3 w-3" /> Your personal messages are end-to-end encrypted</p>
@@ -462,6 +492,10 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut }
       )}
 
       {deleting && <DeleteDialog {...deleteChoices(deleting)} onClose={() => setDeleting(null)} />}
+      {blocking && (
+        <DeleteDialog title={`Block ${titleOf(blocking, me)}?`} body="Blocked contacts can't message or call you, and you can't message or call them. They won't be told." busyLabel="Blocking…"
+          me={{ label: "Block", run: () => setBlocked(otherOf(blocking, me)?.id ?? "", true) }} onClose={() => setBlocking(null)} />
+      )}
       {reporting && <ReportDialog conv={reporting} me={me} recentFrom={(u) => recentFrom(reporting.id, u)} onClose={() => setReporting(null)} onDone={flash} onDeleteChat={() => removeChat(reporting, "me")} />}
       <CallLayer ref={callRef} me={me} convs={() => convsRef.current} onError={flash} />
       {toast && (

@@ -10,16 +10,22 @@
   code, kbd, pre, samp { font-family: theme("fontFamily.mono"); }
 }
 
-/* Same theme tokens as the main app (dark is the default). */
+/*
+ * The colour system (dark is the default). Cool slate neutrals that sit cleanly with the Apple-blue brand; every text
+ * colour meets WCAG AA (4.5:1) on its backgrounds (checked): ink ~17:1, muted ~6.6–7:1, faint ~4.8:1.
+ * Semantic colours follow Apple's system palette, each tuned for its theme (deeper in light mode so text stays legible).
+ */
 :root, :root[data-theme="dark"] {
-  --canvas: 11 12 14; --canvas-raised: 20 21 24;
-  --ink: 237 238 240; --ink-muted: 154 156 163; --ink-faint: 91 93 100;
+  --canvas: 11 12 15; --canvas-raised: 22 23 28;
+  --ink: 242 243 245; --ink-muted: 152 156 166; --ink-faint: 128 132 142;
   --overlay: 255 255 255; --shadow-color: 0 0 0;
+  --success: 48 209 88; --warning: 255 159 10; --danger: 255 69 58; --info: 100 210 255;
 }
 :root[data-theme="light"] {
-  --canvas: 251 251 250; --canvas-raised: 242 242 240;
-  --ink: 22 23 26; --ink-muted: 96 98 105; --ink-faint: 148 150 157;
-  --overlay: 15 15 15; --shadow-color: 20 20 20;
+  --canvas: 244 244 244; --canvas-raised: 236 238 242;
+  --ink: 17 18 22; --ink-muted: 84 88 98; --ink-faint: 104 108 118;
+  --overlay: 15 17 22; --shadow-color: 15 17 22;
+  --success: 30 125 52; --warning: 201 52 0; --danger: 215 0 21; --info: 0 113 164;
 }
 html, body {
   background-color: rgb(var(--canvas));
@@ -97,22 +103,53 @@ html, body {
    (the Pacewise design, as in Pacewise To-do).
    ===================================================================== */
 :root, :root[data-theme="dark"] {
-  --brand: 64 140 255; --tick-read: 64 140 255;
-  --bubble-out: 52 120 246; --bubble-in: 38 39 43; --chat-bg: 11 12 14;
+  /* Apple blue: #0A84FF in dark (5.4:1); a touch deeper (#006AD6) in light, so blue text and links meet AA (4.8:1). */
+  --brand: 10 132 255; --tick-read: 10 132 255;
+  --bubble-out: 10 132 255; --bubble-in: 38 40 46; --chat-bg: 11 12 15;
 }
 :root[data-theme="light"] {
-  --brand: 52 120 246; --tick-read: 52 120 246;
-  --bubble-out: 52 120 246; --bubble-in: 255 255 255; --chat-bg: 242 242 247;
+  --brand: 0 106 214; --tick-read: 0 106 214;
+  --bubble-out: 0 122 255; --bubble-in: 255 255 255; --chat-bg: 244 244 244;
 }
+/*
+ * The chat background: an original design, in two layers.
+ * .chat-aurora (the frame behind the conversation): one flat, even colour, with no glows or shading.
+ * .chat-wallpaper (the scrolling conversation): a hand-drawn tile of small chat bubbles, sparkles, dots and a wave,
+ *   as fine outlines, so the messages always stay on top.
+ */
+.chat-aurora { background-color: rgb(var(--chat-bg)); }
 .chat-wallpaper {
-  background-color: rgb(var(--chat-bg));
-  background-image:
-    radial-gradient(900px 520px at 100% 0%, rgb(var(--brand) / 0.09), transparent 60%),
-    radial-gradient(800px 480px at 0% 100%, rgb(124 92 255 / 0.07), transparent 62%);
+  background-color: transparent;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180' fill='none' stroke='rgba(255,255,255,0.055)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M22 30h26a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-7 6v-6h-5a7 7 0 0 1-7-7V37a7 7 0 0 1 7-7z'/%3E %3Cpath d='M124 112h22a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6h-3v5l-6-5h-13a6 6 0 0 1-6-6v-8a6 6 0 0 1 6-6z'/%3E %3Cpath d='M120 26l2.2 6.3 6.3 2.2-6.3 2.2-2.2 6.3-2.2-6.3-6.3-2.2 6.3-2.2z'/%3E %3Cpath d='M44 132l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z'/%3E %3Cpath d='M70 92c8-7 16-7 24 0s16 7 24 0'/%3E %3Ccircle cx='160' cy='62' r='5'/%3E %3Ccircle cx='86' cy='22' r='1.6' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3Ccircle cx='150' cy='160' r='1.6' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3Ccircle cx='14' cy='96' r='1.6' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3Ccircle cx='100' cy='150' r='1.2' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3C/svg%3E");
+  background-size: 180px 180px;
   background-attachment: local;
 }
+:root[data-theme="light"] .chat-wallpaper { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180' fill='none' stroke='rgba(15,40,90,0.075)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M22 30h26a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-7 6v-6h-5a7 7 0 0 1-7-7V37a7 7 0 0 1 7-7z'/%3E %3Cpath d='M124 112h22a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6h-3v5l-6-5h-13a6 6 0 0 1-6-6v-8a6 6 0 0 1 6-6z'/%3E %3Cpath d='M120 26l2.2 6.3 6.3 2.2-6.3 2.2-2.2 6.3-2.2-6.3-6.3-2.2 6.3-2.2z'/%3E %3Cpath d='M44 132l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z'/%3E %3Cpath d='M70 92c8-7 16-7 24 0s16 7 24 0'/%3E %3Ccircle cx='160' cy='62' r='5'/%3E %3Ccircle cx='86' cy='22' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='150' cy='160' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='14' cy='96' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='100' cy='150' r='1.2' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3C/svg%3E"); }
+/* both layers on one element (the "no chat open" screen): the pattern over the flat colour */
+.chat-wallpaper.chat-aurora { background-color: rgb(var(--chat-bg)); }
+:root[data-theme="light"] .chat-wallpaper.chat-aurora {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180' fill='none' stroke='rgba(15,40,90,0.075)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M22 30h26a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-7 6v-6h-5a7 7 0 0 1-7-7V37a7 7 0 0 1 7-7z'/%3E %3Cpath d='M124 112h22a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6h-3v5l-6-5h-13a6 6 0 0 1-6-6v-8a6 6 0 0 1 6-6z'/%3E %3Cpath d='M120 26l2.2 6.3 6.3 2.2-6.3 2.2-2.2 6.3-2.2-6.3-6.3-2.2 6.3-2.2z'/%3E %3Cpath d='M44 132l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z'/%3E %3Cpath d='M70 92c8-7 16-7 24 0s16 7 24 0'/%3E %3Ccircle cx='160' cy='62' r='5'/%3E %3Ccircle cx='86' cy='22' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='150' cy='160' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='14' cy='96' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='100' cy='150' r='1.2' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3C/svg%3E");
+}
+/* Chat theme (lib/look.ts): my bubbles' colour, every choice keeping white text at AA contrast. */
+:root[data-bubble="teal"] { --mine-from: #12968F; --mine-mid: #0B7F79; --mine-to: #086B66; }
+:root[data-bubble="green"] { --mine-from: #25974A; --mine-mid: #1B7F39; --mine-to: #146A2F; }
+:root[data-bubble="purple"] { --mine-from: #8A5CF6; --mine-mid: #7444E0; --mine-to: #5F33C4; }
+:root[data-bubble="rose"] { --mine-from: #F0457A; --mine-mid: #D6336C; --mine-to: #B8285B; }
+:root[data-bubble="orange"] { --mine-from: #E06A1B; --mine-mid: #C2570D; --mine-to: #A5490B; }
+:root[data-bubble="graphite"] { --mine-from: #55585F; --mine-mid: #45484F; --mine-to: #36383E; }
+/* Chat theme: the wallpaper (Doodles is the default pattern above). */
+:root[data-wallpaper="grid"] .chat-wallpaper, :root[data-wallpaper="grid"] .chat-wallpaper.chat-aurora { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M28 0H0v28' fill='none' stroke='rgba(255,255,255,0.045)' stroke-width='1'/%3E%3C/svg%3E"); background-size: 28px 28px; }
+:root[data-wallpaper="grid"][data-theme="light"] .chat-wallpaper, :root[data-wallpaper="grid"][data-theme="light"] .chat-wallpaper.chat-aurora { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M28 0H0v28' fill='none' stroke='rgba(15,40,90,0.06)' stroke-width='1'/%3E%3C/svg%3E"); }
+:root[data-wallpaper="plain"] .chat-wallpaper, :root[data-wallpaper="plain"] .chat-wallpaper.chat-aurora { background-image: none; }
+/* The wallpaper choices in Chat theme: each tile always shows its own wallpaper. */
+.wp-tile[data-wp="doodles"] { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180' fill='none' stroke='rgba(255,255,255,0.055)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M22 30h26a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-7 6v-6h-5a7 7 0 0 1-7-7V37a7 7 0 0 1 7-7z'/%3E %3Cpath d='M124 112h22a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6h-3v5l-6-5h-13a6 6 0 0 1-6-6v-8a6 6 0 0 1 6-6z'/%3E %3Cpath d='M120 26l2.2 6.3 6.3 2.2-6.3 2.2-2.2 6.3-2.2-6.3-6.3-2.2 6.3-2.2z'/%3E %3Cpath d='M44 132l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z'/%3E %3Cpath d='M70 92c8-7 16-7 24 0s16 7 24 0'/%3E %3Ccircle cx='160' cy='62' r='5'/%3E %3Ccircle cx='86' cy='22' r='1.6' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3Ccircle cx='150' cy='160' r='1.6' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3Ccircle cx='14' cy='96' r='1.6' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3Ccircle cx='100' cy='150' r='1.2' fill='rgba(255,255,255,0.08)' stroke='none'/%3E %3C/svg%3E"); background-size: 96px 96px; }
+:root[data-theme="light"] .wp-tile[data-wp="doodles"] { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180' fill='none' stroke='rgba(15,40,90,0.075)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E %3Cpath d='M22 30h26a7 7 0 0 1 7 7v10a7 7 0 0 1-7 7H34l-7 6v-6h-5a7 7 0 0 1-7-7V37a7 7 0 0 1 7-7z'/%3E %3Cpath d='M124 112h22a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6h-3v5l-6-5h-13a6 6 0 0 1-6-6v-8a6 6 0 0 1 6-6z'/%3E %3Cpath d='M120 26l2.2 6.3 6.3 2.2-6.3 2.2-2.2 6.3-2.2-6.3-6.3-2.2 6.3-2.2z'/%3E %3Cpath d='M44 132l1.6 4.4 4.4 1.6-4.4 1.6-1.6 4.4-1.6-4.4-4.4-1.6 4.4-1.6z'/%3E %3Cpath d='M70 92c8-7 16-7 24 0s16 7 24 0'/%3E %3Ccircle cx='160' cy='62' r='5'/%3E %3Ccircle cx='86' cy='22' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='150' cy='160' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='14' cy='96' r='1.6' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3Ccircle cx='100' cy='150' r='1.2' fill='rgba(15,40,90,0.10)' stroke='none'/%3E %3C/svg%3E"); }
+.wp-tile[data-wp="grid"] { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M28 0H0v28' fill='none' stroke='rgba(255,255,255,0.045)' stroke-width='1'/%3E%3C/svg%3E"); background-size: 28px 28px; }
+:root[data-theme="light"] .wp-tile[data-wp="grid"] { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Cpath d='M28 0H0v28' fill='none' stroke='rgba(15,40,90,0.06)' stroke-width='1'/%3E%3C/svg%3E"); }
 /* my messages: the Pacewise blue, with a soft "pace" gradient */
-.bubble-mine { background: linear-gradient(160deg, #4C8DFF 0%, #3478F6 55%, #3D5AFE 100%); color: #fff; box-shadow: 0 1px 2px rgba(20, 40, 120, 0.18); }
+/* one calibrated blue family (lighter top → brand → deeper bottom), so white text stays crisp across the bubble */
+/* (centred on #0071E3: white text 4.7:1, AA) */
+.bubble-mine { background: linear-gradient(165deg, var(--mine-from, #1A86FF) 0%, var(--mine-mid, #0071E3) 52%, var(--mine-to, #0062C9) 100%); color: #fff; box-shadow: 0 1px 2px rgba(0, 48, 120, 0.2); }
 .bubble-theirs { background: rgb(var(--bubble-in)); box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.08); }
 :root[data-theme="dark"] .bubble-theirs { box-shadow: none; }
 /* frosted header / composer bars */
@@ -121,19 +158,71 @@ html, body {
 .pw-chip { background: rgb(var(--canvas-raised) / 0.82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
 :root[data-theme="light"] .pw-chip { background: rgba(255, 255, 255, 0.85); }
 /* solid rounded menus */
-.pw-menu { background: rgb(42, 43, 48); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.08); }
+/* Round glass buttons in one capsule, as in Pacewise's flip book (FlipReader .rd-corner-pill / .rd-corner-in). */
+.pw-corner-pill { position: relative; display: flex; align-items: center; height: 52px; padding: 0 2px; border-radius: 999px; isolation: isolate; text-shadow: var(--glass-text-shadow, none); }
+.pw-corner-lg { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; }
+.pw-corner-in { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; transition: background 0.15s, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pw-corner-in:active { transform: scale(0.94); }
+.pw-corner-in:focus, .pw-corner-in:focus-visible { outline: none; box-shadow: none; }
+.pw-corner-in:disabled { opacity: 0.4; cursor: default; }
+/* Day mode: the same liquid glass, made visible on a light page (night mode is left exactly as it is). Even on every
+   side: a lightly tinted see-through body that brightens toward its centre, an Apple-thin hairline edge (half a pixel), an even inner glow,
+   and a soft shadow on all sides. */
+:root[data-theme="light"] .pw-corner-lg .lg {
+  background:
+    radial-gradient(closest-side, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.15)),
+    rgba(214, 219, 228, 0.5);
+  box-shadow:
+    0 0 0 0.5px rgba(15, 23, 42, 0.08),
+    0 0 22px rgba(15, 23, 42, 0.12),
+    0 0 4px rgba(15, 23, 42, 0.08);
+}
+:root[data-theme="light"] .pw-corner-lg .lg-glow {
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.85),
+    inset 0 0 6px 1px rgba(255, 255, 255, 0.8),
+    inset 0 0 16px 2px rgba(255, 255, 255, 0.45);
+}
+:root[data-theme="light"] .pw-corner-lg .lg-rim { display: none; }
+:root[data-theme="light"] .pw-corner-sep { background: rgba(15, 23, 42, 0.16); }
+/* One round glass button on its own (flip book .rd-corner). */
+.pw-corner { position: relative; display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: rgb(var(--ink)); cursor: pointer; isolation: isolate; transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.pw-corner:active { transform: scale(0.94); }
+.pw-corner:focus, .pw-corner:focus-visible { outline: none; box-shadow: none; }
+/* Recording a voice message: a softly pulsing red dot. */
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.rec-dot { animation: rec-pulse 1.2s ease-in-out infinite; }
+/* The voice message's scrub bar: a thin track filled up to the playhead, with a small round knob. */
+.voice-range { -webkit-appearance: none; appearance: none; height: 16px; background: transparent; cursor: pointer; margin: 0; }
+.voice-range::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: linear-gradient(to right, currentColor var(--p), color-mix(in srgb, currentColor 30%, transparent) var(--p)); }
+.voice-range::-moz-range-track { height: 3px; border-radius: 3px; background: linear-gradient(to right, currentColor var(--p), color-mix(in srgb, currentColor 30%, transparent) var(--p)); }
+.voice-range::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4.5px; border-radius: 50%; background: currentColor; border: 0; }
+.voice-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: currentColor; border: 0; }
+.voice-range:focus { outline: none; }
+.pw-corner-sep { width: 1px; height: 22px; background: var(--glass-edge, rgba(255, 255, 255, 0.18)); }
+.pw-menu-backdrop { background: rgba(0, 0, 0, 0.28); }
+/* Pull-down menus: grow out of their button's corner with a quick spring, and shrink back into it on close. */
+@keyframes menu-pop { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes menu-pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.94); } }
+@keyframes menu-fade-out { from { opacity: 1; } to { opacity: 0; } }
+.menu-pop { transform-origin: top right; animation: menu-pop 0.24s cubic-bezier(0.32, 1.25, 0.5, 1) both; }
+.menu-pop-out { transform-origin: top right; animation: menu-pop-out 0.14s ease-in both; pointer-events: none; }
+.menu-fade-out { animation: menu-fade-out 0.14s ease-in both; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .menu-pop, .menu-pop-out, .menu-fade-out { animation-duration: 0.01s; } }
+:root[data-theme="light"] .pw-menu-backdrop { background: rgba(0, 0, 0, 0.12); }
+.pw-menu { background: rgb(32, 34, 40); border-radius: 14px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.08); }
 :root[data-theme="light"] .pw-menu { background: #fff; box-shadow: 0 12px 40px rgba(20, 20, 20, 0.16), 0 0 0 0.5px rgba(20, 20, 20, 0.08); }
 /* the message field, the search field, round floating buttons */
-.pw-field { background: rgb(38, 39, 43); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
-:root[data-theme="light"] .pw-field { background: #fff; box-shadow: inset 0 0 0 1px rgba(62, 64, 72, 0.16); }
-.pw-search { background: rgba(120, 122, 132, 0.24); }
-:root[data-theme="light"] .pw-search { background: rgba(120, 122, 132, 0.12); }
-.pw-float { background: rgb(42, 43, 48); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); }
+.pw-field { background: rgb(30, 32, 38); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+:root[data-theme="light"] .pw-field { background: #fff; box-shadow: inset 0 0 0 1px rgba(15, 17, 22, 0.12); }
+.pw-search { background: rgba(118, 124, 140, 0.2); }
+:root[data-theme="light"] .pw-search { background: rgba(118, 124, 140, 0.12); }
+.pw-float { background: rgb(32, 34, 40); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); }
 :root[data-theme="light"] .pw-float { background: #fff; box-shadow: 0 4px 16px rgba(20, 20, 20, 0.14); }
 /* segmented control (chat filters) */
-.pw-seg { background: rgba(120, 122, 132, 0.24); }
-.pw-seg-on { background: rgb(96, 98, 104); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
-:root[data-theme="light"] .pw-seg { background: rgba(120, 122, 132, 0.12); }
+.pw-seg { background: rgba(118, 124, 140, 0.2); }
+.pw-seg-on { background: rgb(84, 88, 100); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+:root[data-theme="light"] .pw-seg { background: rgba(118, 124, 140, 0.12); }
 :root[data-theme="light"] .pw-seg-on { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); }
 /* a message that was jumped to (from a reply) flashes once */
 @keyframes flash { 0%, 100% { filter: none; } 30% { filter: brightness(1.35); } }
@@ -149,7 +238,8 @@ html, body {
 .thin-scroll { scrollbar-width: thin; scrollbar-color: rgb(var(--overlay) / 0.18) transparent; }
 @media (prefers-reduced-motion: reduce) { .flash, .slide-in-left, .slide-in-right { animation: none; } }
 /* the audio call screen: a deep Pacewise blue-to-violet backdrop, and soft rings while it rings */
-.pw-call { background: radial-gradient(120% 80% at 50% 0%, #2D4BD6 0%, #1B2560 45%, #0B0C14 100%); }
+/* the call screen: a deep blue → midnight backdrop from the brand family (always dark, like a phone call screen) */
+.pw-call { background: radial-gradient(120% 80% at 50% 0%, #1652C9 0%, #0F2257 45%, #07080C 100%); }
 @keyframes pw-call-ring { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.75); opacity: 0; } }
 .pw-call-ring { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45); animation: pw-call-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .pw-call-ring { animation: none; opacity: 0; } }

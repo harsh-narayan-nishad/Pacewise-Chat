@@ -20,7 +20,8 @@ export function kindLabel(name: string, type: string): string {
 }
 
 /** What a chat list / notification says for a message with a file. */
-export const fileLabel = (f: { name: string; type: string }) => (isImage(f.type) ? "📷 Photo" : `📎 ${f.name}`);
+export const isAudio = (type: string) => /^audio\//i.test(type);
+export const fileLabel = (f: { name: string; type: string }) => (isImage(f.type) ? "📷 Photo" : isAudio(f.type) ? "🎤 Voice message" : `📎 ${f.name}`);
 
 /** Downloaded and decrypted files, as local addresses (blob URLs), kept while the page is open. */
 const cache = new Map<string, Promise<string>>();

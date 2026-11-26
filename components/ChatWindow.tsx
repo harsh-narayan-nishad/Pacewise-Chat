@@ -1,15 +1,16 @@
 "use client";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ArrowDown, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Paperclip, Phone, Smile, Trash2, Video, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Mic, Paperclip, Pause, Phone, Play, Smile, Trash2, UserCheck, Video, X } from "lucide-react";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import { Avatar } from "@/components/Avatar";
 import { Ticks, TypingDots, tickState } from "@/components/bits";
 import type { Plain, Thread } from "@/components/Messenger";
 import { ButtonWheel } from "@/components/WheelSpinner";
+import LiquidGlass from "@/components/LiquidGlass";
 import { clockOf, dayChip, nameColor, nameOf, otherOf, presenceLabel, sameDay, systemText, titleOf, type Conversation, type Message } from "@/lib/chat";
 import { cn } from "@/lib/utils";
-import { fileLabel, fileUrl, isImage, kindLabel, MAX_FILE_BYTES, saveFile, sizeLabel } from "@/lib/files";
+import { fileLabel, fileUrl, isAudio, isImage, kindLabel, MAX_FILE_BYTES, saveFile, sizeLabel } from "@/lib/files";
 import type { PlainFile } from "@/components/Messenger";
 
 const EMOJI = "😀 😂 🤣 😊 😍 🥰 😘 😎 🤩 🥳 😇 🙂 😉 😌 🤔 🤗 😅 😴 🥲 😢 😭 😤 😡 😱 🙏 👍 👎 👏 🙌 👋 💪 🤝 ✌️ 👌 ❤️ 🧡 💛 💚 💙 💜 🔥 ✨ 🎉 💯 ✅ ❌ 📚 📖 ✍️ 🧠 ⏰ ☕".split(" ");
@@ -25,12 +26,12 @@ function Linked({ text, onBrand = false }: { text: string; onBrand?: boolean }) 
  * One open chat: the header (who, online / last seen / typing…), the messages on the chat wallpaper (day chips,
  * bubbles with time and ticks, replies, deleted messages, group events), and the composer.
  */
-export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, onInfo, onSend, onRetry, onDelete, onDeleteChat, onOlder, onTyping, onCopied, onCall, onReport }: {
+export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, onInfo, onSend, onRetry, onDelete, onDeleteChat, onOlder, onTyping, onCopied, onCall, onReport, onBlock }: {
   conv: Conversation; me: string; thread: Thread | undefined; plain: Record<string, Plain>; typing: Record<string, number>; hasKey: boolean;
   onBack: () => void; onInfo: () => void; onSend: (text: string, replyTo: string | null, file?: File) => Promise<void>; onRetry: (m: Message) => void; onDelete: (m: Message, scope: "me" | "everyone") => Promise<void>; onDeleteChat: () => void;
   onOlder: () => Promise<void>; onTyping: () => void; onCopied: () => void;
   /** Audio call (one-to-one chats) and Report spam. */
-  onCall?: (video: boolean) => void; onReport?: () => void;
+  onCall?: (video: boolean) => void; onReport?: () => void; /** Block (true) or unblock (false) the other person in a one-to-one chat. */ onBlock?: (on: boolean) => void;
 }) {
   const other = otherOf(conv, me);
   const isGroup = conv.type === "group";
@@ -129,15 +130,18 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
             </span>
           </span>
         </button>
-        {!isGroup && !self && onCall && (
+        {/* Call and the chat menu in one liquid-glass capsule, as the flip book's buttons. */}
+        <div className="pw-corner-pill shrink-0 text-brand" role="group" aria-label="Call and chat menu">
+          <span className="pw-corner-lg" aria-hidden><LiquidGlass width="100%" height="100%" radius={26} blur={4} /></span>
+        {!isGroup && !self && onCall && !conv.blockedByMe && (
           <div className="relative">
             {/* the call button opens a small menu: audio or video */}
             <button type="button" onClick={() => setCallMenu((v) => !v)} aria-label={`Call ${titleOf(conv, me)}`} aria-haspopup="menu" aria-expanded={callMenu} title="Call"
-              className="flex h-10 items-center gap-0.5 rounded-full px-2 text-brand hover:bg-brand/10"><Phone className="h-[22px] w-[22px]" strokeWidth={2} /><ChevronDown className={cn("h-3.5 w-3.5 transition-transform", callMenu && "rotate-180")} strokeWidth={2.5} /></button>
+              className="pw-corner-in !w-[60px] gap-0.5 [grid-auto-flow:column]"><Phone size={20} strokeWidth={1.75} aria-hidden /><ChevronDown className={cn("h-3 w-3 transition-transform", callMenu && "rotate-180")} strokeWidth={2.25} aria-hidden /></button>
             {callMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setCallMenu(false)} aria-hidden />
-                <div role="menu" className="pw-menu glass-in absolute right-0 top-11 z-50 w-52 overflow-hidden py-1.5">
+                <div role="menu" className="pw-menu glass-in absolute right-0 top-[60px] z-50 w-52 overflow-hidden py-1.5">
                   <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] text-ink hover:bg-overlay/[0.06]"><Phone className="h-[18px] w-[18px] text-brand" /> Audio call</button>
                   <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(true); }} className="flex w-full items-center gap-3 border-t border-overlay/10 px-4 py-2.5 text-left text-[15px] text-ink hover:bg-overlay/[0.06]"><Video className="h-[18px] w-[18px] text-brand" /> Video call</button>
                 </div>
@@ -145,23 +149,30 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
             )}
           </div>
         )}
+        {!isGroup && !self && onCall && !conv.blockedByMe && <span className="pw-corner-sep" aria-hidden />}
         <div className="relative">
-          <button type="button" onClick={() => setHeadMenu((v) => !v)} aria-label="Chat menu" aria-expanded={headMenu} className="flex h-10 w-10 items-center justify-center rounded-full text-brand hover:bg-brand/10"><MoreHorizontal className="h-6 w-6" strokeWidth={2.25} /></button>
+          <button type="button" onClick={() => setHeadMenu((v) => !v)} aria-label="Chat menu" aria-haspopup="menu" aria-expanded={headMenu} title="Menu" className="pw-corner-in"><MoreHorizontal size={20} strokeWidth={1.75} aria-hidden /></button>
           {headMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setHeadMenu(false)} aria-hidden />
-              <div role="menu" className="pw-menu glass-in absolute right-0 top-11 z-50 w-56 overflow-hidden py-1.5">
+              <div role="menu" className="pw-menu glass-in absolute right-0 top-[60px] z-50 w-56 overflow-hidden py-1.5">
                 <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onInfo(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-ink hover:bg-overlay/[0.06]"><Info className="h-4 w-4 text-ink-muted" /> {isGroup ? "Group info" : "Contact info"}</button>
                 {!self && onReport && <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onReport(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Flag className="h-4 w-4" /> Report spam</button>}
+                {!isGroup && !self && onBlock && (conv.blockedByMe
+                  ? <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onBlock(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-ink hover:bg-overlay/[0.06]"><UserCheck className="h-4 w-4 text-ink-muted" /> Unblock</button>
+                  : <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onBlock(true); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Ban className="h-4 w-4" /> Block</button>)}
                 <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onDeleteChat(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Trash2 className="h-4 w-4" /> Delete chat</button>
               </div>
             </>
           )}
         </div>
+        </div>
       </header>
 
-      <div className="relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={() => void onScroll()} className="chat-wallpaper thin-scroll absolute inset-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-[6%]">
+      <div className="chat-aurora relative min-h-0 flex-1">
+        <div ref={scroller} onScroll={() => void onScroll()} className="chat-wallpaper thin-scroll absolute inset-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-6">
+          {/* One centred reading column on wide screens, so a conversation never stretches edge to edge. */}
+          <div className="mx-auto w-full max-w-[860px]">
           {!thread?.loaded && <div className="flex justify-center py-10 text-ink-muted"><ButtonWheel size={22} /></div>}
           {thread?.hasMore && <div className="flex justify-center py-2 text-ink-muted">{loadingOlder ? <ButtonWheel size={18} /> : null}</div>}
           {thread?.loaded && !thread.hasMore && (
@@ -191,9 +202,10 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                 <div className={cn("group flex", mine ? "justify-end" : "justify-start", startsRun ? "mt-2" : "mt-0.5")}
                   onContextMenu={(e) => { e.preventDefault(); setMenu({ m, x: e.clientX, y: e.clientY }); }}>
                   {/* No tails: a run of messages stacks, with tighter corners on the side they come from. */}
-                  <div id={`msg-${m.id}`} className={cn("relative max-w-[82%] rounded-[20px] px-2.5 pb-1.5 pt-2 text-[15px] leading-[1.38] sm:max-w-[62%]",
-                    mine ? "bubble-mine" : "bubble-theirs text-ink",
-                    mine ? [!startsRun && "rounded-tr-[7px]", !endsRun && "rounded-br-[7px]"] : [!startsRun && "rounded-tl-[7px]", !endsRun && "rounded-bl-[7px]"])}>
+                  <div id={`msg-${m.id}`} className={cn("relative max-w-[82%] rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
+                    // A deleted message is a quiet placeholder: an outline, no colour fill (mine or theirs).
+                    m.deleted ? "border border-overlay/15 bg-transparent text-ink-muted" : mine ? "bubble-mine" : "bubble-theirs text-ink",
+                    mine ? [!startsRun && "rounded-tr-[6px]", !endsRun && "rounded-br-[6px]"] : [!startsRun && "rounded-tl-[6px]", !endsRun && "rounded-bl-[6px]"])}>
                     {isGroup && !mine && startsRun && <p className="mb-0.5 px-1 text-[13px] font-medium" style={{ color: nameColor(m.senderId) }}>{nameOf(conv.members, m.senderId, me)}</p>}
                     {quoted && (
                       <button type="button" onClick={() => jumpTo(quoted.id)} className={cn("mb-1.5 block w-full overflow-hidden rounded-xl border-l-[3px] px-2.5 py-1.5 text-left", mine ? "border-white/80 bg-white/15" : "bg-brand/[0.07]")} style={mine ? undefined : { borderColor: nameColor(quoted.senderId) }}>
@@ -201,9 +213,9 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                         <span className={cn("line-clamp-2 block text-xs", mine ? "text-white/80" : "text-ink-muted")}>{textOf(quoted)}</span>
                       </button>
                     )}
-                    <div className="whitespace-pre-wrap break-words px-1">
+                    <div className="whitespace-pre-wrap break-words px-0.5">
                       {m.deleted ? (
-                        <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><Ban className="h-4 w-4" />{mine ? "You deleted this message" : "This message was deleted"}</span>
+                        <span className="inline-flex items-center gap-1.5 text-[14px] italic text-ink-muted"><Ban className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />{mine ? "You deleted this message" : "This message was deleted"}</span>
                       ) : p && "text" in p ? (
                         <>
                           {p.file && <Attachment file={p.file} conversationId={conv.id} mine={mine} sending={m.status === "sending"} />}
@@ -215,20 +227,19 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                         <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><Lock className="h-4 w-4" />Waiting for this message. This may take a while.</span>
                       )}
                       {/* room for the time and ticks on the last line */}
-                      <span className={cn("inline-block", mine ? "w-[4.6rem]" : "w-12")} aria-hidden />
+                      <span className={cn("inline-block", m.deleted ? "w-11" : mine ? "w-[4.6rem]" : "w-12")} aria-hidden />
                     </div>
-                    <span className={cn("absolute bottom-1.5 right-2.5 flex items-center gap-1 text-[11px]", mine ? "text-white/75" : "text-ink-faint")}>
+                    <span className={cn("absolute bottom-[7px] right-3 flex items-center gap-1 text-[11px] tabular-nums leading-none", mine && !m.deleted ? "text-white/75" : "text-ink-faint")}>
                       {clockOf(m.createdAt)}
-                      {state && <Ticks state={state} onBrand />}
+                      {state && !m.deleted && <Ticks state={state} onBrand />}
                       {state === "failed" && <AlertCircle className="h-3.5 w-3.5 text-accent-extreme" aria-label="Not sent" />}
                     </span>
                     {(
                       <button type="button" aria-label="Message options" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ m, x: r.left, y: r.bottom }); }}
-                        className={cn("absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
-                          mine ? "bg-white/20 text-white" : "bg-overlay/10 text-ink-muted",
-                          // touch screens: always shown, just outside the bubble (so it never covers text or the time)
-                          "[@media(hover:none)]:top-1/2 [@media(hover:none)]:-translate-y-1/2 [@media(hover:none)]:bg-overlay/10 [@media(hover:none)]:text-ink-muted [@media(hover:none)]:opacity-70",
-                          mine ? "[@media(hover:none)]:-left-8 [@media(hover:none)]:right-auto" : "[@media(hover:none)]:-right-8")}>
+                        className={cn("absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full bg-overlay/10 text-ink-muted opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
+                          // just outside the bubble (left of mine, right of theirs): it never covers the text, time or ticks
+                          mine ? "-left-8" : "-right-8",
+                          "[@media(hover:none)]:opacity-70")}>
                         <ChevronDown className="h-4 w-4" />
                       </button>
                     )}
@@ -243,6 +254,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
               <TypingDots className="gap-1 text-ink-muted [&>span]:h-2 [&>span]:w-2" />
             </span></div>
           )}
+          </div>
         </div>
         {!atBottom && (
           <button type="button" onClick={() => { toBottom(true); setUnseen(0); }} aria-label="Scroll to the newest message"
@@ -262,9 +274,17 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
         </div>
       )}
 
+      {conv.blockedByMe ? (
+        /* Blocked: no message box, just what happened and the way back. */
+        <div className="pw-bar flex shrink-0 flex-col items-center gap-1 border-t border-overlay/10 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-center">
+          <p className="text-[14px] text-ink-muted">You blocked {titleOf(conv, me)}.</p>
+          {onBlock && <button type="button" onClick={() => onBlock(false)} className="text-[15px] font-semibold text-brand">Tap to unblock</button>}
+        </div>
+      ) : (
       <Composer key={conv.id} disabled={!hasKey} reply={reply} replyName={reply ? nameOf(conv.members, reply.senderId, me) : ""} replyText={reply ? textOf(reply) : ""}
         onCancelReply={() => setReply(null)} onTyping={onTyping}
         onSend={async (t, f) => { const r = reply?.id ?? null; setReply(null); await onSend(t, r, f); requestAnimationFrame(() => toBottom(true)); }} />
+      )}
 
       {menu && (
         <MessageMenu x={menu.x} y={menu.y} deleted={menu.m.deleted} canCopy={(() => { const p = plain[menu.m.id]; return !!p && "text" in p && !!p.text; })()} onClose={() => setMenu(null)}
@@ -274,11 +294,9 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
       )}
       {delMsg && (
         <DeleteDialog title="Delete message?" onClose={() => setDelMsg(null)}
-          body={delMsg.senderId === me && !delMsg.deleted && !delMsg.status ? "Delete for everyone: it is replaced by \"This message was deleted\" for everyone. Delete for me: it disappears from your view only." : "It disappears from your view only. The others still see it."}
-          choices={[
-            ...(delMsg.senderId === me && !delMsg.deleted && !delMsg.status ? [{ label: "Delete for everyone", run: () => onDelete(delMsg, "everyone") }] : []),
-            { label: "Delete for me", run: () => onDelete(delMsg, "me") },
-          ]} />
+          body={delMsg.senderId === me && !delMsg.deleted && !delMsg.status ? "This message will be removed from your chat." : "This message will be removed from your chat only. Others in this chat will still see it."}
+          me={{ label: "Delete", run: () => onDelete(delMsg, "me") }}
+          everyone={delMsg.senderId === me && !delMsg.deleted && !delMsg.status ? { label: "Delete for Everyone", hint: "The message will be removed for all participants and replaced with “This message was deleted.”", confirm: "Delete for All", run: () => onDelete(delMsg, "everyone") } : undefined} />
       )}
     </div>
   );
@@ -330,6 +348,58 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
   };
   const [emoji, setEmoji] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+
+  /** A voice message being recorded: started when the box is empty and the mic is tapped; sent with the send button. */
+  const rec = useRef<{ recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; send: boolean } | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recStart, setRecStart] = useState(0);
+  const [recNow, setRecNow] = useState(0);
+  const [recError, setRecError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!recording) return;
+    const i = window.setInterval(() => {
+      setRecNow(Date.now());
+      if (Date.now() - recStart > 10 * 60_000) stopRecording(true); // at most 10 minutes
+    }, 250);
+    return () => window.clearInterval(i);
+  }, [recording, recStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { rec.current?.stream.getTracks().forEach((tr) => tr.stop()); }, []);
+
+  const startRecording = async () => {
+    if (disabled || recording) return;
+    setRecError(null);
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) { setRecError("This browser cannot record audio."); return; }
+    let stream: MediaStream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch { setRecError("Allow the microphone to record a voice message."); return; }
+    const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"].find((m) => MediaRecorder.isTypeSupported(m));
+    const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const box = { recorder, stream, chunks: [] as Blob[], send: false };
+    recorder.ondataavailable = (e) => { if (e.data.size) box.chunks.push(e.data); };
+    recorder.onstop = () => {
+      stream.getTracks().forEach((tr) => tr.stop());
+      if (rec.current === box) rec.current = null;
+      if (!box.send || !box.chunks.length) return;
+      const mime = (recorder.mimeType || type || "audio/webm").split(";")[0];
+      const blob = new Blob(box.chunks, { type: mime });
+      if (blob.size > MAX_FILE_BYTES) { setRecError("That recording is too long to send."); return; }
+      const file = new File([blob], `Voice message.${mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm"}`, { type: mime });
+      void onSend("", file);
+    };
+    rec.current = box;
+    recorder.start(250);
+    setRecStart(Date.now()); setRecNow(Date.now()); setRecording(true);
+    onTyping();
+  };
+  /** Ends the recording: send = true sends it, false throws it away. */
+  const stopRecording = (send: boolean) => {
+    const r = rec.current;
+    setRecording(false);
+    if (!r) return;
+    r.send = send;
+    if (r.recorder.state !== "inactive") r.recorder.stop(); else r.stream.getTracks().forEach((tr) => tr.stop());
+  };
+  const recSecs = Math.max(0, Math.floor((recNow - recStart) / 1000));
   const emojiRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -377,6 +447,7 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
         </div>
       )}
       {fileError && <p className="mb-2 px-1 text-xs text-accent-extreme" role="alert">{fileError}</p>}
+      {recError && <p className="mb-2 px-1 text-xs text-accent-extreme" role="alert">{recError}</p>}
       {reply && (
         <div className="mb-2 flex items-start gap-2 rounded-2xl bg-brand/[0.07] p-2.5">
           <div className="min-w-0 flex-1 border-l-[3px] pl-2.5" style={{ borderColor: nameColor(reply.senderId) }}>
@@ -389,6 +460,15 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
       <div className="flex items-end gap-2">
         {/* One rounded field with the emoji button inside it, and a round blue send button. */}
         <div className="pw-field flex min-h-[44px] flex-1 items-end gap-0.5 rounded-[22px] py-1 pl-1 pr-3.5">
+        {recording ? (
+          <div className="flex min-h-[36px] flex-1 items-center gap-3 pl-1" role="status" aria-live="polite">
+            <button type="button" onClick={() => stopRecording(false)} aria-label="Discard voice message" title="Discard"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-accent-extreme transition-colors hover:bg-accent-extreme/10"><Trash2 className="h-[20px] w-[20px]" strokeWidth={1.9} /></button>
+            <span className="rec-dot h-2.5 w-2.5 shrink-0 rounded-full bg-accent-extreme" aria-hidden />
+            <span className="text-[16px] tabular-nums text-ink">{Math.floor(recSecs / 60)}:{String(recSecs % 60).padStart(2, "0")}</span>
+            <span className="truncate text-[14px] text-ink-muted">Recording…</span>
+          </div>
+        ) : (<>
         <div ref={emojiRef} className="relative">
           <button type="button" onClick={() => setEmoji((v) => !v)} disabled={disabled} aria-label="Emoji" aria-expanded={emoji} className={cn("flex h-9 w-9 items-center justify-center rounded-full transition-colors disabled:opacity-40", emoji ? "text-brand" : "text-ink-muted hover:text-brand")}><Smile className="h-[22px] w-[22px]" /></button>
           {emoji && (
@@ -409,9 +489,16 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
             placeholder={disabled ? "Waiting for the encryption key…" : "Type a message"}
             className="thin-scroll max-h-[140px] w-full resize-none bg-transparent text-[16px] leading-6 text-ink outline-none placeholder:text-ink-faint disabled:opacity-60" />
         </label>
+        </>)}
         </div>
-        <button type="button" onClick={submit} disabled={disabled || (!text.trim() && !attached)} aria-label="Send"
-          className="glass-fab flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] disabled:opacity-35 disabled:shadow-none"><ArrowUp className="h-5 w-5" strokeWidth={2.5} /></button>
+        {/* Empty box: a mic to record a voice message. Typing, a picked file or a recording: send. */}
+        {recording || text.trim() || attached ? (
+          <button type="button" onClick={() => (recording ? stopRecording(true) : submit())} disabled={disabled} aria-label={recording ? "Send voice message" : "Send"}
+            className="glass-fab flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] disabled:opacity-35 disabled:shadow-none"><ArrowUp className="h-5 w-5" strokeWidth={2.5} /></button>
+        ) : (
+          <button type="button" onClick={() => void startRecording()} disabled={disabled} aria-label="Record a voice message" title="Record a voice message"
+            className="glass-fab flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] disabled:opacity-35 disabled:shadow-none"><Mic className="h-5 w-5" strokeWidth={2.25} /></button>
+        )}
       </div>
     </div>
   );
@@ -447,6 +534,7 @@ function Attachment({ file, conversationId, mine, sending }: { file: PlainFile; 
     try { await saveFile(conversationId, file); } catch { setFailed(true); } finally { setBusy(false); }
   };
 
+  if (isAudio(file.type)) return <VoiceNote file={file} conversationId={conversationId} mine={mine} sending={sending} />;
   if (image) {
     return (
       <button type="button" onClick={() => void open()} disabled={!file.id} aria-label={`Save ${file.name}`} className="mb-1.5 block w-fit overflow-hidden rounded-[14px]">
@@ -473,5 +561,59 @@ function Attachment({ file, conversationId, mine, sending }: { file: PlainFile; 
       </span>
       {file.id && <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", mine ? "bg-white/20 text-white" : "bg-brand/10 text-brand")}>{busy ? <ButtonWheel size={14} /> : <ArrowDown className="h-4 w-4" strokeWidth={2.25} />}</span>}
     </button>
+  );
+}
+
+/** A voice message in a bubble: play / pause, a bar to scrub, and the time; decrypted on this device on first play. */
+function VoiceNote({ file, conversationId, mine, sending }: { file: PlainFile; conversationId: string; mine: boolean; sending: boolean }) {
+  const audio = useRef<HTMLAudioElement>(null);
+  const [url, setUrl] = useState<string | null>(file.local ?? null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [pos, setPos] = useState(0);
+  const [len, setLen] = useState(0);
+  const want = useRef(false);
+
+  const toggle = async () => {
+    const a = audio.current;
+    if (!a) return;
+    if (playing) { a.pause(); return; }
+    if (!url) {
+      if (!file.id || busy) return;
+      setBusy(true); setFailed(false);
+      try { want.current = true; setUrl(await fileUrl(conversationId, file)); } catch { setFailed(true); } finally { setBusy(false); }
+      return;
+    }
+    void a.play().catch(() => setFailed(true));
+  };
+  // Recorded audio often has no length until it has been read once: read it to the end quietly, then rewind.
+  const onMeta = () => {
+    const a = audio.current;
+    if (!a) return;
+    if (Number.isFinite(a.duration)) setLen(a.duration);
+    else { a.currentTime = 1e9; a.addEventListener("timeupdate", function fix() { a.removeEventListener("timeupdate", fix); setLen(a.duration); a.currentTime = 0; if (want.current) { want.current = false; void a.play(); } }); return; }
+    if (want.current) { want.current = false; void a.play().catch(() => setFailed(true)); }
+  };
+  const t = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const pct = len ? Math.min(100, (pos / len) * 100) : 0;
+  return (
+    <div className="mb-1.5 flex w-[240px] max-w-full items-center gap-3 py-0.5">
+      <button type="button" onClick={() => void toggle()} disabled={sending || (!url && !file.id)} aria-label={playing ? "Pause voice message" : "Play voice message"}
+        className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 disabled:opacity-50", mine ? "bg-white text-brand" : "bg-brand text-white")}>
+        {busy ? <ButtonWheel size={16} /> : playing ? <Pause className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={0} /> : <Play className="ml-0.5 h-[18px] w-[18px]" fill="currentColor" strokeWidth={0} />}
+      </button>
+      <div className="min-w-0 flex-1">
+        <input type="range" min={0} max={len || 1} step={0.01} value={pos} aria-label="Position"
+          onChange={(e) => { const a = audio.current; if (a && len) { a.currentTime = Number(e.target.value); setPos(a.currentTime); } }}
+          className="voice-range block w-full" style={{ ["--p" as string]: `${pct}%`, color: mine ? "#fff" : "rgb(var(--brand))" }} />
+        <span className={cn("mt-1 block text-[12px] tabular-nums", mine ? "text-white/80" : "text-ink-muted")}>
+          {sending ? "Sending…" : failed ? "Couldn't play. Tap to retry" : playing || pos ? t(pos) : len ? t(len) : "Voice message"}
+        </span>
+      </div>
+      {url && <audio ref={audio} src={url} preload="metadata" onLoadedMetadata={onMeta} onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setPos(0); }} className="hidden" />}
+      {!url && <audio ref={audio} className="hidden" />}
+    </div>
   );
 }

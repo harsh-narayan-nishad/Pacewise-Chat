@@ -33,7 +33,7 @@ export function Preview({ c, me, plain }: { c: Conversation; me: string; plain: 
   if (m.kind === "system") return <span className="truncate">{systemText(m, c.members, me)}</span>;
   const mine = m.senderId === me;
   const who = c.type === "group" && !mine ? `${nameOf(c.members, m.senderId, me, false)}: ` : "";
-  if (m.deleted) return <span className="flex min-w-0 items-center gap-1 italic"><Ban className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{who}{mine ? "You deleted this message" : "This message was deleted"}</span></span>;
+  if (m.deleted) return <span className="flex min-w-0 items-center gap-1 italic"><Ban className="h-3.5 w-3.5 shrink-0" /><span className="truncate pr-1">{who}{mine ? "You deleted this message" : "This message was deleted"}</span></span>;
   const p = plain[m.id];
   const text = p && "text" in p ? (p.text || (p.file ? fileLabel(p.file) : "")) : p && "error" in p ? "Couldn't decrypt this message" : "Waiting for this message";
   return (

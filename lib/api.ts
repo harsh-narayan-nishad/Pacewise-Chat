@@ -22,7 +22,7 @@ export const session = {
 };
 
 type Query = Record<string, string | number | boolean | undefined>;
-interface Options { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; query?: Query; noAuth?: boolean }
+interface Options { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown; query?: Query; noAuth?: boolean }
 
 function url(path: string, query?: Query): string {
   const u = new URL(API_BASE + path);
@@ -86,7 +86,7 @@ export async function api<T>(path: string, opts: Options = {}, retried = false):
   return data as T;
 }
 
-export interface User { id: string; name: string; username: string; email: string; avatarUrl?: string | null }
+export interface User { id: string; name: string; username: string; email: string; avatarUrl?: string | null; interests?: string[] }
 interface LoginResult { user: User; accessToken?: string; refreshToken?: string; approvalRequired?: boolean; verificationRequired?: boolean }
 
 /** Sign-ins use the normal Pacewise endpoints: one account for both apps. */

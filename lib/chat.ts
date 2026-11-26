@@ -50,6 +50,8 @@ export interface Conversation {
   members: Member[];
   unread: number;
   lastMessage: Message | null;
+  /** A one-to-one chat with someone I blocked. */
+  blockedByMe?: boolean;
 }
 export interface ChatEvent { type: "message" | "message-deleted" | "conversation" | "read" | "typing" | "keys" | "call"; conversationId?: string; from?: string; data?: unknown }
 /** One audio-call message between the two browsers (relayed by the server, never stored). */
@@ -71,6 +73,9 @@ export const chatApi = {
   setKeys: (body: Omit<StoredKeys, "version"> & { reset?: boolean }) => api<{ version: number }>("/chat/keys", { method: "POST", body }),
   users: (q: string, skip = 0, limit = 30) => api<{ items: Person[]; hasMore: boolean }>("/chat/users", { query: { q, skip, limit } }),
   conversations: () => api<Conversation[]>("/chat/conversations"),
+  blocks: () => api<(Person & { blockedAt: string | null })[]>("/chat/blocks"),
+  block: (userId: string) => api<{ blocked: boolean }>(`/chat/blocks/${encodeURIComponent(userId)}`, { method: "PUT" }),
+  unblock: (userId: string) => api<{ blocked: boolean }>(`/chat/blocks/${encodeURIComponent(userId)}`, { method: "DELETE" }),
   conversation: (id: string) => api<Conversation>(c(id)),
   direct: (userId: string) => api<Conversation>("/chat/conversations", { method: "POST", body: { type: "direct", userId } }),
   group: (name: string, memberIds: string[], description?: string) => api<Conversation>("/chat/conversations", { method: "POST", body: { type: "group", name, memberIds, description } }),
@@ -173,7 +178,9 @@ export function systemText(m: Message, members: { id: string; name: string }[], 
 }
 
 /** Each sender in a group gets their own name colour. */
-const NAME_COLORS = ["#E57373", "#F06292", "#BA68C8", "#9575CD", "#7986CB", "#4FC3F7", "#4DB6AC", "#81C784", "#DCE775", "#FFB74D", "#FF8A65", "#A1887F"];
+/** Avatars and group names: nine hues spaced round the colour wheel at matched lightness and saturation, so none
+ * shouts louder than another and white initials stay readable on every one. */
+const NAME_COLORS = ["#E5484D", "#E54666", "#AB4ABA", "#6E56CF", "#3E63DD", "#0D74CE", "#12A594", "#30A46C", "#EF5F00"];
 export function nameColor(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;

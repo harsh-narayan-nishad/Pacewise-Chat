@@ -81,5 +81,5 @@ export function ChatApp() {
   if (error) return <p className="p-10 text-sm text-accent-extreme" role="alert">{error}</p>;
   if (stored === undefined) return <div className="relative min-h-screen"><WheelSpinner label="Opening your chats" /></div>;
   if (!identity) return <Unlock stored={stored} onUnlocked={(id) => void unlocked(id)} onSignOut={() => void signOut()} />;
-  return <Messenger user={user} identity={identity} light={light} setLight={setLight} onLock={() => void lock()} onSignOut={() => void signOut()} />;
+  return <Messenger user={user} identity={identity} light={light} setLight={setLight} onLock={() => void lock()} onSignOut={() => void signOut()} onUserChange={setUser} />;
 }

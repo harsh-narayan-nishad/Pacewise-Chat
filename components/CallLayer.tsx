@@ -1310,7 +1310,7 @@ export const CallLayer = forwardRef<
                 <div
                   role="dialog"
                   aria-label="Add to call"
-                  className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-h-[70vh] w-full max-w-md flex-col rounded-t-[28px] bg-[#1B1C20]/95 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 text-white shadow-2xl backdrop-blur-xl"
+                  className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-h-[70vh] w-full max-w-md flex-col rounded-t-[28px] bg-[#16171C]/95 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 text-white shadow-2xl backdrop-blur-xl"
                 >
                   <span
                     className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/25"
@@ -1321,7 +1321,7 @@ export const CallLayer = forwardRef<
                     <button
                       type="button"
                       onClick={() => setAdding(false)}
-                      className="rounded-full px-3 py-1.5 text-[15px] text-[#4C8DFF]"
+                      className="rounded-full px-3 py-1.5 text-[15px] text-[#0A84FF]"
                     >
                       Done
                     </button>
@@ -1335,7 +1335,7 @@ export const CallLayer = forwardRef<
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search"
                     aria-label="Search people"
-                    className="mt-3 h-10 rounded-xl bg-white/10 px-3.5 text-[15px] text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-[#4C8DFF]/60"
+                    className="mt-3 h-10 rounded-xl bg-white/10 px-3.5 text-[15px] text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-[#0A84FF]/60"
                   />
                   <ul className="mt-2 min-h-0 flex-1 overflow-y-auto">
                     {addable.length === 0 && (
@@ -1362,7 +1362,7 @@ export const CallLayer = forwardRef<
                             {who.name}
                           </span>
                           <UserPlus
-                            className="h-5 w-5 text-[#4C8DFF]"
+                            className="h-5 w-5 text-[#0A84FF]"
                             aria-hidden
                           />
                         </button>
@@ -1409,9 +1409,9 @@ function CallButton({
       // darkens when pressed.
       ? "bg-gradient-to-b from-[#FF5147] to-[#E2342A] text-white shadow-[0_8px_24px_rgba(226,52,42,0.45),inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_0_rgba(0,0,0,0.12)] active:from-[#E0392F] active:to-[#C72A21]"
       : tone === "green"
-        ? "bg-[#30C26A] text-white"
+        ? "bg-[#30D158] text-white"
         : tone === "white"
-          ? "bg-white text-[#1B1C20]"
+          ? "bg-white text-[#16171C]"
           : "bg-white/15 text-white backdrop-blur";
   return (
     <span className="flex flex-col items-center gap-2">
