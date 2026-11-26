@@ -5,7 +5,8 @@ export const metadata: Metadata = {
   title: "Palk",
   description: "End-to-end encrypted messages and groups with everyone on Pacewise.",
 };
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
+/** interactiveWidget: on Android the on-screen keyboard shrinks the page, so the message box sits just above it. */
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

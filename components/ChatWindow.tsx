@@ -498,7 +498,7 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
   };
 
   return (
-    <div className="pw-bar shrink-0 border-t border-overlay/10 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-4">
+    <div className="pw-bar shrink-0 border-t border-overlay/10 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 group-data-[kb]/app:pb-2 sm:px-4">
       {attached && (
         <div className="mb-2 flex items-center gap-3 rounded-2xl bg-brand/[0.07] p-2.5">
           {isImage(attached.type) ? <LocalThumb file={attached} /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><FileText className="h-5 w-5" /></span>}

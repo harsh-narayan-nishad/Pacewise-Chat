@@ -112,6 +112,8 @@ export const chatApi = {
   joinCall: (callId: string) => api<{ people: CallPerson[] }>(`/chat/calls/${encodeURIComponent(callId)}/join`, { method: "POST" }),
   /** My call history (Calls), newest first; and clearing it (mine only). */
   calls: () => api<CallLogEntry[]>("/chat/calls"),
+  /** Opened from an incoming-call push: the ring this device missed while Palk was closed. */
+  pendingRing: (callId: string) => api<{ ring: { conversationId: string; from: string; video: boolean; sdp: string; kind: "offer" | "invite"; people?: CallPerson[]; ice: Record<string, RTCIceCandidateInit[]> } | null }>(`/chat/calls/${encodeURIComponent(callId)}/pending`),
   clearCalls: () => api<void>("/chat/calls", { method: "DELETE" }),
   /** Status: mine and my contacts' (24-hour updates). */
   statuses: () => api<{ mine: StatusItem[]; others: StatusGroup[] }>("/chat/status"),

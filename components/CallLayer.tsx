@@ -95,6 +95,8 @@ export interface CallHandle {
   start: (c: Conversation, video?: boolean) => void;
   signal: (e: ChatEvent) => void;
   busy: () => boolean;
+  /** Answer this call if it is the one ringing here (Answer on the incoming-call notification). */
+  pickUp: (callId: string) => void;
 }
 
 /** A soft two-tone ring (incoming) or ring-back (outgoing), made in the browser. */
@@ -912,6 +914,7 @@ export const CallLayer = forwardRef<
     start: (c, video) => void start(c, video),
     signal: (e) => void signal(e),
     busy: () => !!callRef.current,
+    pickUp: (callId) => { if (callRef.current?.callId === callId && callRef.current.phase === "incoming") void accept(); },
   }));
 
   const kind = call?.video ? "video" : "audio";

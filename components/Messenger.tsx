@@ -12,6 +12,7 @@ import { StatusTab } from "@/components/StatusTab";
 import { BottomNav } from "@/components/BottomNav";
 import { applyLook, loadLook } from "@/lib/look";
 import { useFullScreen } from "@/lib/fullscreen";
+import { disablePush, enablePush } from "@/lib/push";
 import { ChatWindow } from "@/components/ChatWindow";
 import { InfoPanel } from "@/components/InfoPanel";
 import { Logo } from "@/components/Logo";
@@ -187,6 +188,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
       clear();
     };
   }, [phone, panel]);
+
   /** A sign-in QR code opened with the phone's own camera app (…/?link=<id>): go straight to approving it. */
   const [linkId, setLinkId] = useState<string | null>(null);
   useEffect(() => {
@@ -200,6 +202,52 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   /** The chat whose other person is about to be blocked (the confirmation is open). */
   const [blocking, setBlocking] = useState<Conversation | null>(null);
   useEffect(() => { applyLook(loadLook()); }, []);
+  /**
+   * Phones: while the on-screen keyboard is up, Palk fills only the part of the screen above it (as WhatsApp does),
+   * so the message box sits right on top of the keyboard and the conversation stays visible above it. iPhones do not
+   * shrink the page for the keyboard, so the visible area is followed here; Android does it itself (see layout.tsx).
+   */
+  const [kb, setKb] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const fit = () => {
+      const open = window.matchMedia("(max-width: 767px)").matches && vv.height < window.innerHeight - 80;
+      setKb(open ? { top: vv.offsetTop, height: vv.height } : null);
+    };
+    fit();
+    vv.addEventListener("resize", fit);
+    vv.addEventListener("scroll", fit);
+    return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); };
+  }, []);
+  // Calls ring this device even when Palk is closed (once notifications are allowed).
+  useEffect(() => { void enablePush(); }, []);
+  /**
+   * Opened from an incoming-call notification (…/?call=<id>, &answer=1 for Answer): the ring this device missed while
+   * Palk was closed comes from the server, is handed to the call screen as if it had just arrived, and is picked up
+   * at once for Answer. Waits for the chat list, so the call screen knows who is calling.
+   */
+  const [pendingCall, setPendingCall] = useState<{ id: string; answer: boolean } | null>(null);
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    const id = u.searchParams.get("call");
+    if (!id) return;
+    const answer = u.searchParams.get("answer") === "1";
+    u.searchParams.delete("call"); u.searchParams.delete("answer");
+    window.history.replaceState(window.history.state, "", u.pathname + u.search + u.hash);
+    setPendingCall({ id, answer });
+  }, []);
+  useEffect(() => {
+    if (!pendingCall || !loaded) return;
+    const { id, answer } = pendingCall;
+    setPendingCall(null);
+    chatApi.pendingRing(id).then(({ ring }) => {
+      if (!ring) { flash("That call has ended."); return; }
+      callRef.current?.signal({ type: "call", conversationId: ring.conversationId, from: ring.from, data: { callId: id, kind: ring.kind, video: ring.video, sdp: ring.sdp || undefined, people: ring.people } });
+      for (const candidate of ring.ice[ring.from] ?? []) callRef.current?.signal({ type: "call", from: ring.from, data: { callId: id, kind: "ice", candidate } });
+      if (answer) window.setTimeout(() => callRef.current?.pickUp(id), 300);
+    }, () => flash("Could not pick up the call."));
+  }, [pendingCall, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const fullScreen = useFullScreen();
   const [info, setInfo] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -647,6 +695,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
     if (typeof Notification === "undefined") return flash("This browser cannot show notifications.");
     const r = await Notification.requestPermission();
     flash(r === "granted" ? "Notifications are on." : "Notifications are blocked for this site.");
+    if (r === "granted") void enablePush(); // calls now ring this device even when Palk is closed
   }, [flash]);
 
   /** One bottom-nav section's page. */
@@ -659,7 +708,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
       }} />
     ) : (
       <Sidebar user={user} convs={convs} loaded={loaded} error={loadError} plain={plain} typing={typing} activeId={activeId} onOpen={open} onStartDirect={(id) => void startDirect(id)}
-            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} onLinkDevice={() => { setLinkId(null); setPanel("link"); }} light={light} setLight={setLight} onLock={onLock} onSignOut={onSignOut}
+            onNewChat={() => setPanel("chat")} onNewGroup={() => setPanel("group")} onProfile={() => setPanel("profile")} fullScreen={fullScreen} onTheme={() => setPanel("theme")} onBlocked={() => setPanel("blocked")} onLinkDevice={() => { setLinkId(null); setPanel("link"); }} light={light} setLight={setLight} onLock={onLock} onSignOut={() => { void disablePush().finally(onSignOut); }}
             onDeleteChat={setDeleting} onDeleteChats={removeChats} onMarkRead={markChatsRead} notificationsAllowed={notificationsAllowed} onAskNotifications={() => void askNotifications()} />
     );
 
@@ -672,7 +721,8 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   };
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-canvas pt-[max(env(safe-area-inset-top),12px)] md:pt-0">
+    <div data-kb={kb ? "" : undefined} className="group/app flex h-[100dvh] w-full overflow-hidden bg-canvas pt-[max(env(safe-area-inset-top),12px)] md:pt-0"
+      style={kb ? { position: "fixed", left: 0, right: 0, top: kb.top, height: kb.height } : undefined}>
       <aside className={cn("relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[360px] lg:w-[400px]", activeId ? "hidden" : "flex")}>
         {panel === "profile" ? (
           <ProfilePanel user={user} onClose={() => setPanel(null)} onSaved={onUserChange} />
