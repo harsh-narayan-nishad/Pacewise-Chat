@@ -261,7 +261,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                   {/* No tails: a run of messages stacks, with tighter corners on the side they come from. */}
                   <div id={`msg-${m.id}`}
                     onClick={(e) => {
-                      if ((e.target as Element).closest("a, button, input, audio, img") || (window.getSelection()?.toString() ?? "")) return;
+                      if ((e.target as Element).closest("a, button, input, audio, img, [role=slider]") || (window.getSelection()?.toString() ?? "")) return;
                       setMenu({ m, x: e.clientX, y: e.clientY });
                     }}
                     className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
@@ -289,7 +289,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                         <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><Lock className="h-4 w-4" />Waiting for this message. This may take a while.</span>
                       )}
                       {/* room for the time and ticks on the last line */}
-                      <span className={cn("inline-block", m.deleted ? "w-11" : mine ? "w-[4.6rem]" : "w-12")} aria-hidden />
+                      {!(p && "text" in p && p.file && isAudio(p.file.type) && !p.text) && <span className={cn("inline-block", m.deleted ? "w-11" : mine ? "w-[4.6rem]" : "w-12")} aria-hidden />}
                     </div>
                     <span className={cn("absolute bottom-[7px] right-3 flex items-center gap-1 text-[11px] tabular-nums leading-none", mine && !m.deleted ? "text-white/75" : "text-ink-faint")}>
                       {clockOf(m.createdAt)}
@@ -435,6 +435,7 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
     let stream: MediaStream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
     catch { setRecError("Allow the microphone to record a voice message."); return; }
+    if (!hold.current.down) { stream.getTracks().forEach((tr) => tr.stop()); return; } // let go before it could start
     const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"].find((m) => MediaRecorder.isTypeSupported(m));
     const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
     const box = { recorder, stream, chunks: [] as Blob[], send: false };
@@ -463,6 +464,40 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
     if (r.recorder.state !== "inactive") r.recorder.stop(); else r.stream.getTracks().forEach((tr) => tr.stop());
   };
   const recSecs = Math.max(0, Math.floor((recNow - recStart) / 1000));
+
+  /**
+   * The mic, as in WhatsApp: press and hold to record, let go to send. Sliding the finger to the left while holding
+   * throws the recording away; a quick tap only shows how it works.
+   */
+  const hold = useRef<{ down: boolean; x: number; at: number }>({ down: false, x: 0, at: 0 });
+  const [slide, setSlide] = useState(0);
+  const [holdHint, setHoldHint] = useState(false);
+  const CANCEL_AT = 110;
+  const holdStart = (x: number) => {
+    if (disabled || hold.current.down) return;
+    hold.current = { down: true, x, at: Date.now() };
+    setSlide(0); setHoldHint(false);
+    try { navigator.vibrate?.(10); } catch { /* not supported */ }
+    void startRecording();
+  };
+  const holdMove = (x: number) => {
+    if (!hold.current.down) return;
+    const dx = Math.max(0, hold.current.x - x);
+    setSlide(dx);
+    if (dx > CANCEL_AT) { hold.current.down = false; setSlide(0); stopRecording(false); try { navigator.vibrate?.([10, 40, 10]); } catch { /* not supported */ } }
+  };
+  const holdEnd = () => {
+    if (!hold.current.down) return;
+    hold.current.down = false;
+    setSlide(0);
+    if (Date.now() - hold.current.at < 400) {
+      stopRecording(false);
+      setHoldHint(true);
+      window.setTimeout(() => setHoldHint(false), 2500);
+      return;
+    }
+    stopRecording(true);
+  };
   const emojiRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -511,6 +546,7 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
       )}
       {fileError && <p className="mb-2 px-1 text-xs text-accent-extreme" role="alert">{fileError}</p>}
       {recError && <p className="mb-2 px-1 text-xs text-accent-extreme" role="alert">{recError}</p>}
+      {holdHint && <p className="mb-2 px-1 text-right text-xs text-ink-muted" role="status">Hold to record, release to send</p>}
       {reply && (
         <div className="mb-2 flex items-start gap-2 rounded-2xl bg-brand/[0.07] p-2.5">
           <div className="min-w-0 flex-1 border-l-[3px] pl-2.5" style={{ borderColor: nameColor(reply.senderId) }}>
@@ -529,7 +565,9 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-accent-extreme transition-colors hover:bg-accent-extreme/10"><Trash2 className="h-[20px] w-[20px]" strokeWidth={1.9} /></button>
             <span className="rec-dot h-2.5 w-2.5 shrink-0 rounded-full bg-accent-extreme" aria-hidden />
             <span className="text-[16px] tabular-nums text-ink">{Math.floor(recSecs / 60)}:{String(recSecs % 60).padStart(2, "0")}</span>
-            <span className="truncate text-[14px] text-ink-muted">Recording…</span>
+            <span className="ml-auto flex items-center gap-1 truncate pr-1 text-[14px] text-ink-muted transition-opacity" style={{ transform: `translateX(${-Math.min(slide, CANCEL_AT)}px)`, opacity: 1 - Math.min(slide, CANCEL_AT) / (CANCEL_AT * 1.4) }}>
+              <ChevronLeft className="h-4 w-4" /> Slide to cancel
+            </span>
           </div>
         ) : (<>
         <div ref={emojiRef} className="relative">
@@ -555,12 +593,19 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
         </>)}
         </div>
         {/* Empty box: a mic to record a voice message. Typing, a picked file or a recording: send. */}
-        {recording || text.trim() || attached ? (
-          <button type="button" onClick={() => (recording ? stopRecording(true) : submit())} disabled={disabled} aria-label={recording ? "Send voice message" : "Send"}
+        {!recording && (text.trim() || attached) ? (
+          <button type="button" onClick={() => submit()} disabled={disabled} aria-label="Send"
             className="glass-fab flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] disabled:opacity-35 disabled:shadow-none"><ArrowUp className="h-5 w-5" strokeWidth={2.5} /></button>
         ) : (
-          <button type="button" onClick={() => void startRecording()} disabled={disabled} aria-label="Record a voice message" title="Record a voice message"
-            className="glass-fab flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] disabled:opacity-35 disabled:shadow-none"><Mic className="h-5 w-5" strokeWidth={2.25} /></button>
+          <button type="button" disabled={disabled} aria-label="Hold to record a voice message, release to send" title="Hold to record, release to send"
+            onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); holdStart(e.clientX); }}
+            onPointerMove={(e) => holdMove(e.clientX)}
+            onPointerUp={holdEnd} onPointerCancel={holdEnd} onLostPointerCapture={holdEnd}
+            onKeyDown={(e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); holdStart(0); } }}
+            onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); holdEnd(); } }}
+            onContextMenu={(e) => e.preventDefault()}
+            className={cn("glass-fab flex h-11 w-11 shrink-0 touch-none select-none items-center justify-center rounded-full bg-brand text-white shadow-[0_4px_14px_rgb(var(--brand)/0.35)] transition-transform duration-150 [-webkit-touch-callout:none] disabled:opacity-35 disabled:shadow-none",
+              recording && "scale-[1.3] shadow-[0_6px_22px_rgb(var(--brand)/0.5)]")}><Mic className="h-5 w-5" strokeWidth={2.25} /></button>
         )}
       </div>
     </div>
@@ -627,56 +672,102 @@ function Attachment({ file, conversationId, mine, sending }: { file: PlainFile; 
   );
 }
 
-/** A voice message in a bubble: play / pause, a bar to scrub, and the time; decrypted on this device on first play. */
+/** Bars for a voice message's waveform, from the recording itself (loudness per slice, softened); flat until read. */
+const BARS = 34;
+async function waveOf(url: string): Promise<number[]> {
+  const buf = await (await fetch(url)).arrayBuffer();
+  const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const ctx = new Ctx();
+  try {
+    const audio = await ctx.decodeAudioData(buf);
+    const data = audio.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / BARS));
+    const peaks = Array.from({ length: BARS }, (_, i) => {
+      let sum = 0;
+      for (let k = i * step; k < Math.min(data.length, (i + 1) * step); k++) sum += data[k] * data[k];
+      return Math.sqrt(sum / step);
+    });
+    const max = Math.max(...peaks, 0.0001);
+    return peaks.map((v) => 0.18 + 0.82 * Math.pow(v / max, 0.7));
+  } finally { void ctx.close(); }
+}
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/**
+ * A voice message in a bubble, as Apple shows audio: a round play button, the recording's own waveform that fills in
+ * as it plays (tap or drag on it to jump), and its length underneath, level with the message time. The file is
+ * decrypted on this device as soon as it is shown (voice messages are small), so the waveform and length are there
+ * before it plays.
+ */
 function VoiceNote({ file, conversationId, mine, sending }: { file: PlainFile; conversationId: string; mine: boolean; sending: boolean }) {
   const audio = useRef<HTMLAudioElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
   const [url, setUrl] = useState<string | null>(file.local ?? null);
-  const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
   const [len, setLen] = useState(0);
-  const want = useRef(false);
+  const [wave, setWave] = useState<number[] | null>(null);
 
-  const toggle = async () => {
-    const a = audio.current;
-    if (!a) return;
-    if (playing) { a.pause(); return; }
-    if (!url) {
-      if (!file.id || busy) return;
-      setBusy(true); setFailed(false);
-      try { want.current = true; setUrl(await fileUrl(conversationId, file)); } catch { setFailed(true); } finally { setBusy(false); }
-      return;
-    }
-    void a.play().catch(() => setFailed(true));
-  };
-  // Recorded audio often has no length until it has been read once: read it to the end quietly, then rewind.
+  useEffect(() => {
+    if (url || !file.id) return;
+    let live = true;
+    fileUrl(conversationId, file).then((u) => { if (live) setUrl(u); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [url, file, conversationId]);
+  useEffect(() => {
+    if (!url) return;
+    let live = true;
+    waveOf(url).then((w) => { if (live) setWave(w); }, () => undefined);
+    return () => { live = false; };
+  }, [url]);
+
+  // Recorded audio often has no length until read once: read it to the end quietly, then rewind.
   const onMeta = () => {
     const a = audio.current;
     if (!a) return;
-    if (Number.isFinite(a.duration)) setLen(a.duration);
-    else { a.currentTime = 1e9; a.addEventListener("timeupdate", function fix() { a.removeEventListener("timeupdate", fix); setLen(a.duration); a.currentTime = 0; if (want.current) { want.current = false; void a.play(); } }); return; }
-    if (want.current) { want.current = false; void a.play().catch(() => setFailed(true)); }
+    if (Number.isFinite(a.duration)) { setLen(a.duration); return; }
+    a.currentTime = 1e9;
+    a.addEventListener("timeupdate", function fix() { a.removeEventListener("timeupdate", fix); setLen(a.duration); a.currentTime = 0; setPos(0); });
   };
-  const t = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  const pct = len ? Math.min(100, (pos / len) * 100) : 0;
+  const toggle = () => {
+    const a = audio.current;
+    if (!a || !url) return;
+    if (playing) a.pause(); else void a.play().catch(() => setFailed(true));
+  };
+  const seek = (clientX: number) => {
+    const a = audio.current, r = bar.current?.getBoundingClientRect();
+    if (!a || !r || !len) return;
+    const f = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    a.currentTime = f * len; setPos(a.currentTime);
+  };
+  const played = len ? pos / len : 0;
+  const ready = !!url && !failed;
+  const on = mine ? "bg-white" : "bg-brand";
+  const off = mine ? "bg-white/40" : "bg-ink-faint/60";
   return (
-    <div className="mb-1.5 flex w-[240px] max-w-full items-center gap-3 py-0.5">
-      <button type="button" onClick={() => void toggle()} disabled={sending || (!url && !file.id)} aria-label={playing ? "Pause voice message" : "Play voice message"}
-        className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 disabled:opacity-50", mine ? "bg-white text-brand" : "bg-brand text-white")}>
-        {busy ? <ButtonWheel size={16} /> : playing ? <Pause className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={0} /> : <Play className="ml-0.5 h-[18px] w-[18px]" fill="currentColor" strokeWidth={0} />}
+    <div className="mb-[-2px] flex w-[230px] max-w-full items-center gap-2.5 pt-0.5">
+      <button type="button" onClick={toggle} disabled={!ready || sending} aria-label={playing ? "Pause voice message" : "Play voice message"}
+        className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full transition-transform active:scale-90 disabled:opacity-50", mine ? "bg-white text-brand" : "bg-brand text-white")}>
+        {!url && !failed ? <ButtonWheel size={14} /> : playing ? <Pause className="h-4 w-4" fill="currentColor" strokeWidth={0} /> : <Play className="ml-0.5 h-4 w-4" fill="currentColor" strokeWidth={0} />}
       </button>
       <div className="min-w-0 flex-1">
-        <input type="range" min={0} max={len || 1} step={0.01} value={pos} aria-label="Position"
-          onChange={(e) => { const a = audio.current; if (a && len) { a.currentTime = Number(e.target.value); setPos(a.currentTime); } }}
-          className="voice-range block w-full" style={{ ["--p" as string]: `${pct}%`, color: mine ? "#fff" : "rgb(var(--brand))" }} />
-        <span className={cn("mt-1 block text-[12px] tabular-nums", mine ? "text-white/80" : "text-ink-muted")}>
-          {sending ? "Sending…" : failed ? "Couldn't play. Tap to retry" : playing || pos ? t(pos) : len ? t(len) : "Voice message"}
+        {/* the waveform: played bars in full colour; tap or drag to jump */}
+        <div ref={bar} role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(len)} aria-valuenow={Math.round(pos)} tabIndex={ready ? 0 : -1}
+          onPointerDown={(e) => { if (!ready) return; e.currentTarget.setPointerCapture(e.pointerId); seek(e.clientX); }}
+          onPointerMove={(e) => { if (e.buttons & 1) seek(e.clientX); }}
+          onKeyDown={(e) => { const a = audio.current; if (!a || !len) return; if (e.key === "ArrowRight") a.currentTime = Math.min(len, a.currentTime + 2); if (e.key === "ArrowLeft") a.currentTime = Math.max(0, a.currentTime - 2); }}
+          className="flex h-7 cursor-pointer touch-none items-center gap-[2px] outline-none">
+          {(wave ?? Array(BARS).fill(0.18)).map((h, i) => (
+            <span key={i} className={cn("w-[3px] flex-1 rounded-full transition-colors", (i + 0.5) / BARS <= played ? on : off)} style={{ height: `${Math.round(h * 100)}%` }} />
+          ))}
+        </div>
+        <span className={cn("block text-[11px] leading-[14px] tabular-nums", mine ? "text-white/75" : "text-ink-faint")}>
+          {sending ? "Sending…" : failed ? "Couldn't load" : playing || pos ? mmss(pos) : len ? mmss(len) : "0:00"}
         </span>
       </div>
       {url && <audio ref={audio} src={url} preload="metadata" onLoadedMetadata={onMeta} onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setPos(0); }} className="hidden" />}
-      {!url && <audio ref={audio} className="hidden" />}
     </div>
   );
 }
