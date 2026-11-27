@@ -285,12 +285,10 @@ export function Sidebar(props: {
         )}
         {term && shown.length === 0 && newPeople.length === 0 && <p className="px-6 py-10 text-center text-sm text-ink-muted">No chats or people match “{q.trim()}”.</p>}
         {rowMenu && (
-          <div ref={rowMenuRef} role="menu" className="pw-menu glass-in fixed z-[130] w-48 overflow-hidden py-1.5"
-            style={{ left: Math.max(8, Math.min(rowMenu.x, window.innerWidth - 200)), top: Math.min(rowMenu.y, window.innerHeight - 60) }}>
-            <button role="menuitem" type="button" onClick={() => { const c = rowMenu.c; setRowMenu(null); togglePick(c.id); }}
-              className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-ink hover:bg-overlay/[0.06]"><CheckCircle2 className="h-4 w-4 text-ink-muted" /> Select chat</button>
-            <button role="menuitem" type="button" onClick={() => { const c = rowMenu.c; setRowMenu(null); props.onDeleteChat(c); }}
-              className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Trash2 className="h-4 w-4" /> Delete chat</button>
+          <div ref={rowMenuRef} role="menu" className="pw-menu glass-in fixed z-[130] w-56 overflow-hidden rounded-[14px]"
+            style={{ left: Math.max(8, Math.min(rowMenu.x, window.innerWidth - 232)), top: Math.min(rowMenu.y, window.innerHeight - 110) }}>
+            <button role="menuitem" type="button" onClick={() => { const c = rowMenu.c; setRowMenu(null); togglePick(c.id); }} className="pw-mi">Select chat<CheckCircle2 /></button>
+            <button role="menuitem" type="button" onClick={() => { const c = rowMenu.c; setRowMenu(null); props.onDeleteChat(c); }} className="pw-mi pw-mi-danger">Delete chat<Trash2 /></button>
           </div>
         )}
         {props.loaded && <p className="flex items-center justify-center gap-1.5 px-6 py-6 text-xs text-ink-faint"><Lock className="h-3 w-3" /> Your personal messages are end-to-end encrypted</p>}

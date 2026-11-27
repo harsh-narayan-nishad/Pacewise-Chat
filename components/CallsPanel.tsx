@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Phone, PhoneOff, Video } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Phone, PhoneMissed, Video } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import { PanelLoader } from "@/components/WheelSpinner";
-import { chatApi, listTime, type CallLogEntry } from "@/lib/chat";
+import { chatApi, type CallLogEntry } from "@/lib/chat";
 import { cn } from "@/lib/utils";
 
 /** "3:12" / "1:02:05" */
@@ -14,15 +14,35 @@ const dur = (s: number) => {
 };
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
-/** What a row says under the name, and whether it is a missed call (red). */
+/** What a row says under the name (the kind of call shows as its icon), and whether it is a missed call (red). */
 function describe(c: CallLogEntry): { text: string; missed: boolean } {
-  const kind = c.video ? "Video" : "Voice";
-  if (c.outcome === "answered") return { text: `${c.direction === "out" ? "Outgoing" : "Incoming"} ${kind.toLowerCase()} call${c.seconds ? ` · ${dur(c.seconds)}` : ""}`, missed: false };
-  if (c.direction === "in") return { text: c.outcome === "declined" ? `Declined ${kind.toLowerCase()} call` : `Missed ${kind.toLowerCase()} call`, missed: c.outcome !== "declined" };
-  if (c.outcome === "declined" || c.outcome === "busy") return { text: `${kind} call · ${c.outcome === "busy" ? "Busy" : "Declined"}`, missed: false };
-  if (c.outcome === "unanswered") return { text: `${kind} call · No answer`, missed: false };
-  if (c.outcome === "ringing") return { text: `Outgoing ${kind.toLowerCase()} call`, missed: false };
-  return { text: `${kind} call · Cancelled`, missed: false };
+  if (c.outcome === "answered") return { text: `${c.direction === "out" ? "Outgoing" : "Incoming"}${c.seconds ? ` · ${dur(c.seconds)}` : ""}`, missed: false };
+  if (c.direction === "in") return c.outcome === "declined" ? { text: "Declined", missed: false } : { text: "Missed", missed: true };
+  if (c.outcome === "declined") return { text: "Outgoing · Declined", missed: false };
+  if (c.outcome === "busy") return { text: "Outgoing · Busy", missed: false };
+  if (c.outcome === "unanswered") return { text: "Outgoing · No answer", missed: false };
+  if (c.outcome === "ringing") return { text: "Outgoing", missed: false };
+  return { text: "Outgoing · Cancelled", missed: false };
+}
+/** One time on the right, as the Phone app: the time today, "Yesterday", the weekday this week, else the date. */
+function when(iso: string): string {
+  const d = new Date(iso), now = new Date();
+  const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000);
+  if (days === 0) return clock(iso);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+}
+/** Calls in a row with the same person, the same day and the same kind of outcome fold into one row, as "Name (3)". */
+type Row = { c: CallLogEntry; count: number };
+function fold(list: CallLogEntry[]): Row[] {
+  const rows: Row[] = [];
+  for (const c of list) {
+    const last = rows[rows.length - 1];
+    const same = last && last.c.peers[0]?.id === c.peers[0]?.id && new Date(last.c.startedAt).toDateString() === new Date(c.startedAt).toDateString() && describe(last.c).missed === describe(c).missed;
+    if (same) last.count++; else rows.push({ c, count: 1 });
+  }
+  return rows;
 }
 
 /**
@@ -33,6 +53,8 @@ export function CallsPanel({ me, onClose, onCall, asTab = false }: { me: string;
   const [list, setList] = useState<CallLogEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [only, setOnly] = useState<"all" | "missed">("all");
+  const rows = useMemo(() => fold((list ?? []).filter((c) => only === "all" || describe(c).missed)), [list, only]);
   useEffect(() => { chatApi.calls().then(setList, (e) => setError(e instanceof Error ? e.message : "Could not load your calls.")); }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !clearing) onClose(); };
@@ -45,7 +67,7 @@ export function CallsPanel({ me, onClose, onCall, asTab = false }: { me: string;
       {asTab ? (
         <>
           <header className="flex h-14 shrink-0 items-center justify-end px-4 pt-1">
-            {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[14px] font-medium text-accent-extreme hover:bg-overlay/[0.06]">Clear call log</button>}
+            {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[15px] font-medium text-brand transition-colors hover:bg-overlay/[0.06]">Clear</button>}
           </header>
           <h1 className="shrink-0 px-4 pb-3 pt-1 text-[32px] font-bold leading-tight tracking-[-0.02em] text-ink">Calls</h1>
         </>
@@ -53,41 +75,54 @@ export function CallsPanel({ me, onClose, onCall, asTab = false }: { me: string;
         <header className="flex h-16 shrink-0 items-center gap-4 px-4">
           <button type="button" onClick={onClose} aria-label="Back" className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted hover:bg-overlay/[0.08]"><ArrowLeft className="h-5 w-5" /></button>
           <h2 className="flex-1 text-lg text-ink">Calls</h2>
-          {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[14px] font-medium text-accent-extreme hover:bg-overlay/[0.06]">Clear call log</button>}
+          {list && list.length > 0 && <button type="button" onClick={() => setClearing(true)} className="h-9 rounded-full px-3 text-[15px] font-medium text-brand transition-colors hover:bg-overlay/[0.06]">Clear</button>}
         </header>
+      )}
+      {list && list.length > 0 && (
+        <div className="shrink-0 px-4 pb-2">
+          <div className="pw-seg flex rounded-[9px] p-[2px]" role="tablist" aria-label="Show calls">
+            {(["all", "missed"] as const).map((f) => (
+              <button key={f} type="button" role="tab" aria-selected={only === f} onClick={() => setOnly(f)}
+                className={cn("flex-1 rounded-[7px] py-[5px] text-[13px] font-semibold capitalize transition-colors", only === f ? "pw-seg-on text-ink" : "text-ink-muted")}>{f}</button>
+            ))}
+          </div>
+        </div>
       )}
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto pb-8">
         {error && <p className="px-4 py-3 text-[14px] text-accent-extreme" role="alert">{error}</p>}
         {!list && !error && <PanelLoader label="Loading calls" />}
-        {list && list.length === 0 && (
-          <div className="flex flex-col items-center gap-3 px-8 pt-16 text-center">
-            <span className="grid h-14 w-14 place-items-center rounded-full bg-overlay/[0.07] text-ink-muted"><Phone className="h-6 w-6" /></span>
-            <p className="text-[16px] text-ink">No calls yet</p>
-            <p className="text-[14px] text-ink-muted">Calls you make and get show up here. Start one from a chat with the phone button.</p>
+        {list && rows.length === 0 && (
+          <div className="flex flex-col items-center px-8 pt-20 text-center">
+            <span className="grid h-16 w-16 place-items-center rounded-full bg-brand/[0.12] text-brand">{only === "missed" ? <PhoneMissed className="h-7 w-7" /> : <Phone className="h-7 w-7" />}</span>
+            <p className="mt-4 text-[17px] font-semibold text-ink">{only === "missed" ? "No missed calls" : "No recent calls"}</p>
+            <p className="mt-1 max-w-[260px] text-[14px] leading-snug text-ink-muted">{only === "missed" ? "Calls you didn't pick up will show here." : "Voice and video calls you make and get will show here. Start one from any chat."}</p>
           </div>
         )}
-        {list && list.length > 0 && (
-          <ul>
-            {list.map((c) => {
+        {rows.length > 0 && (
+          <ul className="pt-1">
+            {rows.map(({ c, count }) => {
               const p = c.peers[0];
               const others = c.peers.length - 1;
               const { text, missed } = describe(c);
-              const Arrow = c.direction === "out" ? ArrowUpRight : ArrowDownLeft;
               const Kind = c.video ? Video : Phone;
+              const Dir = missed ? PhoneMissed : c.direction === "out" ? ArrowUpRight : ArrowDownLeft;
               return (
-                <li key={c.id} className="flex items-center gap-3 px-4">
-                  <Avatar id={p?.id ?? c.id} name={p?.name ?? "Call"} url={p?.avatarUrl} size={44} />
-                  <span className="flex min-h-[64px] min-w-0 flex-1 items-center gap-3 border-b border-overlay/[0.07] py-2">
+                <li key={c.id} className="group flex items-center gap-3 pl-4 transition-colors hover:bg-overlay/[0.03]">
+                  <Avatar id={p?.id ?? c.id} name={p?.name ?? "Call"} url={p?.avatarUrl} size={42} />
+                  <span className="flex min-h-[62px] min-w-0 flex-1 items-center gap-2 border-b border-overlay/[0.08] py-2 pr-3 group-last:border-transparent">
                     <span className="min-w-0 flex-1">
-                      <span className={cn("block truncate text-[16px] font-medium", missed ? "text-accent-extreme" : "text-ink")}>{p?.name ?? "Unknown"}{others > 0 ? ` and ${others} more` : ""}</span>
-                      <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[13px] text-ink-muted">
-                        {missed ? <PhoneOff className="h-3.5 w-3.5 shrink-0 text-accent-extreme" aria-hidden /> : <Arrow className={cn("h-3.5 w-3.5 shrink-0", c.outcome === "answered" ? "text-accent-medium" : "text-ink-faint")} strokeWidth={2.5} aria-hidden />}
+                      <span className={cn("block truncate text-[16px] font-semibold leading-tight", missed ? "text-accent-extreme" : "text-ink")}>
+                        {p?.name ?? "Unknown"}{others > 0 ? ` +${others}` : ""}{count > 1 && <span className="font-normal"> ({count})</span>}
+                      </span>
+                      <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[13px] text-ink-muted">
+                        <Kind className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+                        <Dir className={cn("h-3 w-3 shrink-0", missed ? "text-accent-extreme" : c.outcome === "answered" ? "text-accent-medium" : "text-ink-faint")} strokeWidth={2.5} aria-hidden />
                         <span className="truncate">{text}</span>
                       </span>
                     </span>
-                    <span className="shrink-0 text-right text-[13px] tabular-nums text-ink-faint">{listTime(c.startedAt)}{listTime(c.startedAt) !== clock(c.startedAt) && <span className="block">{clock(c.startedAt)}</span>}</span>
+                    <span className="shrink-0 text-[14px] tabular-nums text-ink-faint">{when(c.startedAt)}</span>
                     <button type="button" onClick={() => onCall(c, c.video)} disabled={!p || p.id === me} aria-label={`${c.video ? "Video" : "Voice"} call ${p?.name ?? ""}`} title={c.video ? "Video call" : "Voice call"}
-                      className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-brand transition-colors hover:bg-overlay/[0.08] disabled:opacity-30"><Kind className="h-5 w-5" /></button>
+                      className="ml-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand/[0.12] text-brand transition-transform active:scale-90 disabled:opacity-30"><Kind className="h-[17px] w-[17px]" strokeWidth={2} /></button>
                   </span>
                 </li>
               );

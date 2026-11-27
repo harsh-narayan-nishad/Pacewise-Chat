@@ -12,8 +12,12 @@ import {
   Lock,
   Mic,
   MicOff,
+  MoreHorizontal,
   Phone,
+  Pin,
+  PinOff,
   SwitchCamera,
+  UserMinus,
   UserPlus,
   Video,
   VideoOff,
@@ -75,6 +79,8 @@ interface Call {
   facing: "user" | "environment";
   /** Being added to a call: who else is in it. */
   with?: string[];
+  /** Who started the call: they can mute or remove people (group calls). */
+  hostId?: string;
 }
 /** Someone else in the call: my direct connection to them ("ringing": I am adding them and they have not answered yet). */
 interface Peer {
@@ -86,6 +92,8 @@ interface Peer {
   /** Their device got the call and is ringing (until then the call is only "Calling…"). */
   rung?: boolean;
   convId?: string;
+  /** They muted themselves (they tell everyone over the control channel). */
+  muted?: boolean;
   /** A small control channel straight to them: "bye" when either side hangs up, so the other ends at once. */
   dc?: RTCDataChannel;
 }
@@ -294,6 +302,20 @@ export const CallLayer = forwardRef<
   const attachLocal = (el: HTMLVideoElement | null) => {
     if (el && el.srcObject !== localStream) el.srcObject = localStream;
   };
+  /** Video call: tapping the small picture swaps it with the big one (as FaceTime); a new call starts unswapped. */
+  const [swapped, setSwapped] = useState(false);
+  /** Group call: whose picture is large (null: the first with video on). */
+  const [featured, setFeatured] = useState<string | null>(null);
+  /** Group call: whose ⋯ menu is open. */
+  const [tileMenu, setTileMenu] = useState<string | null>(null);
+  useEffect(() => { setSwapped(false); setFeatured(null); setTileMenu(null); }, [call?.callId]);
+  // a ⋯ menu closes on a tap anywhere else
+  useEffect(() => {
+    if (!tileMenu) return;
+    const down = (e: PointerEvent) => { if (!(e.target instanceof Element && e.target.closest("[data-tile-menu]"))) setTileMenu(null); };
+    document.addEventListener("pointerdown", down);
+    return () => document.removeEventListener("pointerdown", down);
+  }, [tileMenu]);
   /** Someone's stream on a <video> (muted: their sound plays through their own <audio>) or <audio>. */
   const attach =
     (stream: MediaStream | null) => (el: HTMLMediaElement | null) => {
@@ -383,8 +405,21 @@ export const CallLayer = forwardRef<
     // while the connection is still up) means they hung up: end at once, with no "Reconnecting…".
     try {
       const dc = p.createDataChannel("control", { negotiated: true, id: 0 });
-      dc.onmessage = (ev) => { if (ev.data === "bye" && peers.current.get(who.id) === peer) drop(who.id); };
+      dc.onmessage = (ev) => {
+        if (peers.current.get(who.id) !== peer) return;
+        if (ev.data === "bye") { drop(who.id); return; }
+        let m: { t?: string; muted?: boolean } = {};
+        try { m = JSON.parse(String(ev.data)); } catch { return; }
+        if (m.t === "state") { peer.muted = !!m.muted; bump(); return; }
+        // only the host's requests count
+        if (callRef.current?.hostId !== who.id) return;
+        if (m.t === "mute") { if (!callRef.current?.muted) mute(); say(`${who.name.split(" ")[0]} muted you`); }
+        else if (m.t === "ask-unmute") say(`${who.name.split(" ")[0]} asks you to unmute`);
+        else if (m.t === "remove") { void sendPeer(callId, { kind: "end" }); finish(`${who.name.split(" ")[0]} removed you from the call`); }
+      };
       dc.onclose = () => { if (peers.current.get(who.id) === peer && p.connectionState === "connected") drop(who.id); };
+      // tell them straight away whether I am muted (someone joining later sees it too)
+      dc.onopen = () => { try { dc.send(JSON.stringify({ t: "state", muted: !!callRef.current?.muted })); } catch { /* channel gone */ } };
       peer.dc = dc;
     } catch { /* no data channels here: the server's "end" still ends the call */ }
     peers.current.set(who.id, peer);
@@ -518,6 +553,7 @@ export const CallLayer = forwardRef<
       callId,
       convId: conv.id,
       peer,
+      hostId: me,
       muted: false,
       video,
       camOff: false,
@@ -651,6 +687,7 @@ export const CallLayer = forwardRef<
       t.enabled = !muted;
     });
     setCall({ ...c, muted });
+    for (const x of peers.current.values()) { try { if (x.dc?.readyState === "open") x.dc.send(JSON.stringify({ t: "state", muted })); } catch { /* channel gone */ } }
   };
   /** Camera off / on (the others then see my avatar). */
   const toggleCam = () => {
@@ -822,6 +859,8 @@ export const CallLayer = forwardRef<
         callId: s.callId,
         convId: e.conversationId,
         peer,
+        // the one who started it: the caller, or (being added) the first person in the call
+        hostId: s.kind === "offer" ? from : (s.people?.[0]?.id ?? from),
         muted: false,
         video,
         camOff: false,
@@ -993,236 +1032,9 @@ export const CallLayer = forwardRef<
     : [];
   const canAdd = call?.phase === "active" && list.length + 1 < MAX_PEOPLE;
 
-  return (
+  /** The call buttons (the same everywhere): Decline / Accept while it rings; Mute, Camera, Switch, Add and End in a call. */
+  const controls = () => !call ? null : (
     <>
-      {/* everyone's sound (video elements stay muted) */}
-      {list.map(
-        (p) =>
-          p.stream && (
-            <audio
-              key={p.who.id}
-              ref={attach(p.stream)}
-              autoPlay
-              playsInline
-              className="hidden"
-            />
-          ),
-      )}
-      {call &&
-        createPortal(
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${call.video ? "Video" : "Audio"} call with ${title}`}
-            className="pw-call fade-in fixed inset-0 z-[200] flex flex-col items-center justify-between overflow-hidden px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))] text-white"
-          >
-            {/* video, one other person: theirs (or mine while calling) fills the screen; mine sits small in a corner once theirs is on */}
-            {call.video && !group && (
-              <>
-                {showRemote && (
-                  <video
-                    ref={attach(single.stream)}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="absolute inset-0 h-full w-full bg-black object-cover"
-                  />
-                )}
-                {myFull && (
-                  <video
-                    ref={attachLocal}
-                    autoPlay
-                    playsInline
-                    muted
-                    className={cn(
-                      "absolute inset-0 h-full w-full object-cover",
-                      call.facing === "user" && "-scale-x-100",
-                    )}
-                  />
-                )}
-                {showRemote && hasCam && !call.camOff && (
-                  <video
-                    ref={attachLocal}
-                    autoPlay
-                    playsInline
-                    muted
-                    className={cn(
-                      "absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10 h-44 w-28 rounded-2xl border border-white/20 bg-black object-cover shadow-2xl sm:h-52 sm:w-36",
-                      call.facing === "user" && "-scale-x-100",
-                    )}
-                  />
-                )}
-                {(showRemote || myFull) && (
-                  <span
-                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/60"
-                    aria-hidden
-                  />
-                )}
-              </>
-            )}
-
-            <p
-              className={cn(
-                "relative flex items-center gap-1.5 text-[13px] text-white/75 drop-shadow",
-                (showRemote || group) && "self-start",
-              )}
-            >
-              <Lock className="h-3.5 w-3.5" aria-hidden /> End-to-end encrypted
-            </p>
-
-            {group ? (
-              // more people: everyone in a grid (me too, in a video call)
-              <div className="relative mt-3 flex min-h-0 w-full max-w-3xl flex-1 flex-col">
-                <h2 className="truncate text-[20px] font-semibold tracking-[-0.02em] drop-shadow">
-                  {title}
-                </h2>
-                <p
-                  className="mt-0.5 text-[15px] tabular-nums text-white/80"
-                  aria-live="polite"
-                >
-                  {status}
-                  {call.muted && call.phase === "active" ? " · Muted" : ""}
-                  {call.video && call.camOff && live ? " · Camera off" : ""}
-                </p>
-                <div
-                  className={cn(
-                    "mt-4 grid min-h-0 flex-1 auto-rows-fr gap-2",
-                    list.length + (call.video ? 1 : 0) > 2
-                      ? "grid-cols-2"
-                      : "grid-cols-1 sm:grid-cols-2",
-                  )}
-                >
-                  {list.map((p) => (
-                    <div
-                      key={p.who.id}
-                      className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-2xl bg-white/10"
-                    >
-                      {call.video &&
-                      p.stream &&
-                      p.hasVideo &&
-                      p.state === "connected" ? (
-                        <video
-                          ref={attach(p.stream)}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="absolute inset-0 h-full w-full bg-black object-cover"
-                        />
-                      ) : (
-                        <span className="relative">
-                          {p.state === "ringing" && (
-                            <span className="pw-call-ring absolute inset-0 rounded-full" />
-                          )}
-                          <Avatar
-                            id={p.who.id}
-                            name={p.who.name}
-                            url={p.who.avatarUrl}
-                            size={64}
-                            className="relative"
-                          />
-                        </span>
-                      )}
-                      <span className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/45 px-2.5 py-1 text-[12px] backdrop-blur">
-                        {p.who.name.split(" ")[0]}
-                        {p.state === "ringing"
-                          ? p.rung
-                            ? " · Ringing…"
-                            : " · Calling…"
-                          : p.state === "connecting"
-                            ? " · Connecting…"
-                            : ""}
-                      </span>
-                    </div>
-                  ))}
-                  {call.video && (
-                    <div className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-2xl bg-white/10">
-                      {hasCam && !call.camOff ? (
-                        <video
-                          ref={attachLocal}
-                          autoPlay
-                          playsInline
-                          muted
-                          className={cn(
-                            "absolute inset-0 h-full w-full bg-black object-cover",
-                            call.facing === "user" && "-scale-x-100",
-                          )}
-                        />
-                      ) : (
-                        <VideoOff
-                          className="h-7 w-7 text-white/60"
-                          aria-hidden
-                        />
-                      )}
-                      <span className="absolute bottom-2 left-2 rounded-full bg-black/45 px-2.5 py-1 text-[12px] backdrop-blur">
-                        You
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div
-                className={cn(
-                  "relative flex flex-col items-center text-center",
-                  showRemote && "items-start self-start text-left",
-                )}
-              >
-                {!showRemote && (
-                  <span className="relative">
-                    {ringingNow && (
-                      <>
-                        <span className="pw-call-ring absolute inset-0 rounded-full" />
-                        <span className="pw-call-ring absolute inset-0 rounded-full [animation-delay:0.9s]" />
-                      </>
-                    )}
-                    <Avatar
-                      id={face!.id}
-                      name={face!.name}
-                      url={face!.avatarUrl}
-                      size={myFull ? 88 : 128}
-                      className="relative"
-                    />
-                  </span>
-                )}
-                <h2
-                  className={cn(
-                    "font-semibold tracking-[-0.02em] drop-shadow",
-                    showRemote ? "text-[22px]" : "mt-7 text-[30px]",
-                  )}
-                >
-                  {face!.name}
-                </h2>
-                <p
-                  className="mt-1.5 text-[17px] tabular-nums text-white/80 drop-shadow"
-                  aria-live="polite"
-                >
-                  {status}
-                  {call.muted && call.phase === "active" ? " · Muted" : ""}
-                  {call.video && call.camOff && live ? " · Camera off" : ""}
-                </p>
-                {call.phase === "incoming" && !!call.with?.length && (
-                  <p className="mt-1 text-[15px] text-white/70">
-                    With {call.with.join(", ")}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {note && (
-              <p
-                className="relative mt-3 rounded-full bg-black/40 px-3.5 py-1.5 text-[14px] backdrop-blur"
-                role="status"
-              >
-                {note}
-              </p>
-            )}
-
-            <div
-              className={cn(
-                "relative flex w-full max-w-md items-start justify-around",
-                group && "mt-4",
-              )}
-            >
               {call.phase === "incoming" ? (
                 <>
                   <CallButton label="Decline" tone="red" onClick={decline}>
@@ -1300,7 +1112,300 @@ export const CallLayer = forwardRef<
                   </CallButton>
                 </>
               )}
-            </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* everyone's sound (video elements stay muted) */}
+      {list.map(
+        (p) =>
+          p.stream && (
+            <audio
+              key={p.who.id}
+              ref={attach(p.stream)}
+              autoPlay
+              playsInline
+              className="hidden"
+            />
+          ),
+      )}
+      {call &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${call.video ? "Video" : "Audio"} call with ${title}`}
+            className={cn("pw-call fade-in fixed inset-0 z-[200] flex flex-col items-center justify-between overflow-hidden text-white", group ? "p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]" : "px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))]", !showRemote && !myFull && !group && "pw-call-light")}
+          >
+            {/*
+              The backdrop: a light grey doodle wallpaper (see .pw-call-paper / .pw-call-doodle). Under everything else,
+              and hidden once a video fills the screen.
+            */}
+            {!showRemote && !myFull && (
+              <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
+                {group ? (
+                  <div className="pw-call-group absolute inset-0" />
+                ) : (
+                  <>
+                    <div className="pw-call-paper absolute inset-0" />
+                    <div className="pw-call-doodle absolute inset-0" />
+                  </>
+                )}
+              </div>
+            )}
+            {/* video, one other person: theirs (or mine while calling) fills the screen; mine sits small in a corner once theirs is on */}
+            {call.video && !group && (
+              <>
+                {showRemote && (swapped && hasCam && !call.camOff ? (
+                  // swapped: me on the big screen
+                  <video
+                    key="big-me"
+                    ref={attachLocal}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={cn("absolute inset-0 h-full w-full bg-black object-cover", call.facing === "user" && "-scale-x-100")}
+                  />
+                ) : (
+                  <video
+                    key="big-them"
+                    ref={attach(single.stream)}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute inset-0 h-full w-full bg-black object-cover"
+                  />
+                ))}
+                {myFull && (
+                  <video
+                    ref={attachLocal}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={cn(
+                      "absolute inset-0 h-full w-full object-cover",
+                      call.facing === "user" && "-scale-x-100",
+                    )}
+                  />
+                )}
+                {showRemote && hasCam && !call.camOff && (
+                  // the small picture: tap to swap it with the big one
+                  <button
+                    type="button"
+                    onClick={() => setSwapped((v) => !v)}
+                    aria-label={swapped ? `Show ${face?.name ?? "them"} large` : "Show me large"}
+                    title="Tap to swap"
+                    className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10 h-44 w-28 overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl outline-none transition-transform active:scale-95 sm:h-52 sm:w-36"
+                  >
+                    {swapped ? (
+                      <video key="small-them" ref={attach(single.stream)} autoPlay playsInline muted className="h-full w-full object-cover" />
+                    ) : (
+                      <video key="small-me" ref={attachLocal} autoPlay playsInline muted className={cn("h-full w-full object-cover", call.facing === "user" && "-scale-x-100")} />
+                    )}
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2.5 pb-1.5 pt-6 text-left text-[12px] font-semibold text-white">
+                      {swapped ? face?.name : "You"}
+                    </span>
+                  </button>
+                )}
+                {(showRemote || myFull) && (
+                  <span
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/60"
+                    aria-hidden
+                  />
+                )}
+              </>
+            )}
+
+            <p
+              className={cn(
+                "relative flex items-center gap-1.5 text-[13px] text-white/75 drop-shadow",
+                showRemote && "self-start",
+                group && "hidden",
+              )}
+            >
+              <Lock className="h-3.5 w-3.5" aria-hidden /> End-to-end encrypted
+            </p>
+
+            {group ? (
+              // More people (inspired by modern meeting apps): the person in focus in a large rounded frame, everyone else
+              // as rounded tiles beside it (below it on phones); a tap on a tile brings that person into focus.
+              (() => {
+                const ids = [...list.map((p) => p.who.id), ...(call.video ? ["me"] : [])];
+                const focus = featured && ids.includes(featured) ? featured : (list.find((p) => p.stream && p.hasVideo)?.who.id ?? list[0]?.who.id ?? "me");
+                const stateOf = (p: Peer) => p.state === "ringing" ? (p.rung ? "Ringing…" : "Calling…") : p.state === "connecting" ? "Connecting…" : "";
+                /** One person's picture: their video when it is on, else their avatar on a soft card. */
+                const face = (id: string, big: boolean) => {
+                  if (id === "me") {
+                    return hasCam && !call.camOff ? (
+                      <video key={`v-me-${big}`} ref={attachLocal} autoPlay playsInline muted className={cn("absolute inset-0 h-full w-full bg-black object-cover", call.facing === "user" && "-scale-x-100")} />
+                    ) : (
+                      <span className="grid h-full w-full place-items-center"><VideoOff className={big ? "h-9 w-9 text-white/55" : "h-6 w-6 text-white/55"} aria-hidden /></span>
+                    );
+                  }
+                  const p = list.find((x) => x.who.id === id);
+                  if (!p) return null;
+                  return call.video && p.stream && p.hasVideo && p.state === "connected" ? (
+                    <video key={`v-${id}-${big}`} ref={attach(p.stream)} autoPlay playsInline muted className="absolute inset-0 h-full w-full bg-black object-cover" />
+                  ) : (
+                    <span className="grid h-full w-full place-items-center">
+                      <span className="relative">
+                        {p.state === "ringing" && <span className="pw-call-ring absolute inset-0 rounded-full" />}
+                        <Avatar id={p.who.id} name={p.who.name} url={p.who.avatarUrl} size={big ? 112 : 56} className="relative" />
+                      </span>
+                    </span>
+                  );
+                };
+                const label = (id: string) => {
+                  if (id === "me") return "You";
+                  const p = list.find((x) => x.who.id === id);
+                  return p ? `${p.who.name}${stateOf(p) ? ` · ${stateOf(p)}` : ""}` : "";
+                };
+                /** The line under a name: how their part of the call is going. */
+                const subOf = (id: string) => {
+                  if (id === "me") return call.muted ? "Muted" : call.video && call.camOff ? "Camera off" : "";
+                  const p = list.find((x) => x.who.id === id);
+                  if (!p) return "";
+                  return stateOf(p) || [p.muted ? "Muted" : "", call.video && !(p.stream && p.hasVideo) ? "Camera off" : ""].filter(Boolean).join(" · ");
+                };
+                const nameOf = (id: string) => (id === "me" ? "You" : list.find((x) => x.who.id === id)?.who.name ?? "");
+                const host = call.hostId === me;
+                /** Host requests to one person, over the direct control channel. */
+                const tell = (id: string, msg: Record<string, unknown>) => {
+                  const x = peers.current.get(id);
+                  try { if (x?.dc?.readyState === "open") x.dc.send(JSON.stringify(msg)); } catch { /* channel gone */ }
+                };
+                /** ⋯ on a person: pin (anyone); mute, ask to unmute, remove (the host, for others). */
+                const more = (id: string, where: string, open: "left" | "right" = "right") => {
+                  const p = id === "me" ? null : list.find((x) => x.who.id === id);
+                  const pinned = featured === id;
+                  const act = (fn: () => void) => (ev: React.MouseEvent) => { ev.stopPropagation(); setTileMenu(null); fn(); };
+                  return (
+                    <div data-tile-menu className={cn(where, "z-10")} onClick={(ev) => ev.stopPropagation()}>
+                      <button type="button" onClick={(ev) => { ev.stopPropagation(); setTileMenu(tileMenu === id ? null : id); }} aria-label={`Options for ${nameOf(id)}`} aria-haspopup="menu" aria-expanded={tileMenu === id}
+                        className="grid h-8 w-8 place-items-center rounded-full bg-black/45 text-white outline-none ring-1 ring-inset ring-white/10 transition-transform active:scale-90">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                      {tileMenu === id && (
+                        <div role="menu" className={cn("pw-menu glass-in absolute top-10 w-56 overflow-hidden rounded-[14px] text-left [text-shadow:none]", open === "right" ? "left-0" : "right-0")}>
+                          <button role="menuitem" type="button" className="pw-mi" onClick={act(() => setFeatured(pinned ? null : id))}>{pinned ? "Unpin" : "Pin to big screen"}{pinned ? <PinOff /> : <Pin />}</button>
+                          {host && p && (p.muted
+                            ? <button role="menuitem" type="button" className="pw-mi" onClick={act(() => { tell(id, { t: "ask-unmute" }); say(`Asked ${p.who.name.split(" ")[0]} to unmute`); })}>Ask to unmute<Mic /></button>
+                            : <button role="menuitem" type="button" className="pw-mi" onClick={act(() => { tell(id, { t: "mute" }); say(`${p.who.name.split(" ")[0]} was muted`); })}>Mute<MicOff /></button>)}
+                          {host && p && <button role="menuitem" type="button" className="pw-mi pw-mi-danger" onClick={act(() => { tell(id, { t: "remove" }); say(`${p.who.name.split(" ")[0]} was removed`); })}>Remove from call<UserMinus /></button>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+                return (
+                  <div className="relative flex min-h-0 w-full flex-1 flex-col gap-3 md:flex-row">
+                    {/* everyone else: rounded tiles, each with its person's full name */}
+                    <div className="thin-scroll order-2 flex shrink-0 gap-3 overflow-x-auto pb-1 md:order-1 md:grid md:w-[380px] md:grid-cols-2 md:content-start md:overflow-visible">
+                      {ids.filter((id) => id !== focus).map((id) => (
+                        <div key={id} role="button" tabIndex={0} onClick={() => setFeatured(id)} onKeyDown={(ev) => { if (ev.key === "Enter") setFeatured(id); }} aria-label={`Show ${nameOf(id)} large`}
+                          className={cn("relative aspect-[1/1.05] w-40 shrink-0 cursor-pointer rounded-[22px] bg-white/[0.07] text-center outline-none ring-1 ring-inset ring-white/10 transition-transform active:scale-[0.97] md:w-auto", tileMenu === id && "z-20")}>
+                          {/* the picture and its name, clipped to the rounded tile (the ⋯ menu may reach past it) */}
+                          <span className="absolute inset-0 overflow-hidden rounded-[22px]">
+                            <span className="absolute inset-0 pb-9">{face(id, false)}</span>
+                            <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-2 pb-2.5 pt-8">
+                              <span className="block truncate text-[13px] font-semibold leading-tight">{nameOf(id)}</span>
+                              {subOf(id) && <span className="mt-0.5 block truncate text-[11px] text-white/70">{subOf(id)}</span>}
+                            </span>
+                          </span>
+                          {more(id, "absolute right-2 top-2", "right")}
+                        </div>
+                      ))}
+                    </div>
+                    {/* the person in focus, with the call's buttons inside */}
+                    <div className="relative order-1 min-h-[300px] flex-1 overflow-hidden rounded-[26px] bg-black/30 ring-1 ring-inset ring-white/10 md:order-2">
+                      {face(focus, true)}
+                      <span className="pointer-events-none absolute left-3 top-3 inline-flex h-8 max-w-[calc(100%-13rem)] items-center truncate rounded-full bg-black/45 px-3.5 text-[14px] font-semibold ring-1 ring-inset ring-white/10">
+                        {nameOf(focus)}{subOf(focus) ? <span className="font-normal text-white/75"> · {subOf(focus)}</span> : null}
+                      </span>
+                      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+                      <span className="pointer-events-none inline-flex h-8 items-center gap-1.5 rounded-full bg-black/45 px-3 text-[13px] tabular-nums ring-1 ring-inset ring-white/10" aria-live="polite">
+                        <Lock className="h-3 w-3 text-white/75" aria-label="End-to-end encrypted" />
+                        {status}{call.muted && call.phase === "active" ? " · Muted" : ""}
+                      </span>
+                      {more(focus, "relative", "left")}
+                      </div>
+                      <div className="absolute inset-x-0 bottom-3 flex justify-center px-3">
+                        <div className="flex items-start gap-4 rounded-[26px] bg-black/45 px-5 pb-2 pt-3 ring-1 ring-inset ring-white/10">
+                          {controls()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div
+                className={cn(
+                  "relative flex flex-col items-center text-center",
+                  showRemote && "mb-auto mt-2 items-start self-start text-left",
+                )}
+              >
+                {!showRemote && (
+                  <span className="relative">
+                    {ringingNow && (
+                      <>
+                        <span className="pw-call-ring absolute inset-0 rounded-full" />
+                        <span className="pw-call-ring absolute inset-0 rounded-full [animation-delay:0.9s]" />
+                      </>
+                    )}
+                    <Avatar
+                      id={face!.id}
+                      name={face!.name}
+                      url={face!.avatarUrl}
+                      size={myFull ? 88 : 128}
+                      className="relative"
+                    />
+                  </span>
+                )}
+                {showRemote ? (
+                  // video: the name belongs to their picture: a pill on it while it is large (the small one is labelled itself)
+                  !swapped && (
+                    <h2 className="inline-flex max-w-[70vw] items-center rounded-full bg-black/45 px-4 py-1.5 text-[16px] font-semibold tracking-[-0.01em] ring-1 ring-inset ring-white/10">
+                      <span className="truncate">{face!.name}</span>
+                    </h2>
+                  )
+                ) : (
+                  <h2 className="mt-7 text-[30px] font-semibold tracking-[-0.02em] drop-shadow">
+                    {face!.name}
+                  </h2>
+                )}
+                <p
+                  className={cn("tabular-nums text-white/80 drop-shadow", showRemote ? cn("text-[15px]", swapped ? "mt-1" : "mt-2 px-4") : "mt-1.5 text-[17px]")}
+                  aria-live="polite"
+                >
+                  {status}
+                  {call.muted && call.phase === "active" ? " · Muted" : ""}
+                  {call.video && call.camOff && live ? " · Camera off" : ""}
+                </p>
+                {call.phase === "incoming" && !!call.with?.length && (
+                  <p className="mt-1 text-[15px] text-white/70">
+                    With {call.with.join(", ")}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {note && (
+              <p
+                className="relative mt-3 rounded-full bg-black/40 px-3.5 py-1.5 text-[14px] backdrop-blur"
+                role="status"
+              >
+                {note}
+              </p>
+            )}
+
+            {/* one-to-one: the buttons under the person; a group call has them inside the big picture */}
+            {!group && (
+              <div className="relative flex w-full max-w-md items-start justify-around">
+                {controls()}
+              </div>
+            )}
 
             {/* Add someone: a sheet over the call */}
             {adding && live && (

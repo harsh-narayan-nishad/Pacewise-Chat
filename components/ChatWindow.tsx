@@ -195,9 +195,9 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
             {callMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setCallMenu(false)} aria-hidden />
-                <div role="menu" className="pw-menu glass-in absolute right-0 top-[60px] z-50 w-52 overflow-hidden py-1.5">
-                  <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] text-ink hover:bg-overlay/[0.06]"><Phone className="h-[18px] w-[18px] text-brand" /> Audio call</button>
-                  <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(true); }} className="flex w-full items-center gap-3 border-t border-overlay/10 px-4 py-2.5 text-left text-[15px] text-ink hover:bg-overlay/[0.06]"><Video className="h-[18px] w-[18px] text-brand" /> Video call</button>
+                <div role="menu" className="pw-menu glass-in absolute right-0 top-[60px] z-50 w-56 overflow-hidden rounded-[14px]">
+                  <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(false); }} className="pw-mi">Voice call<Phone /></button>
+                  <button role="menuitem" type="button" onClick={() => { setCallMenu(false); onCall(true); }} className="pw-mi">Video call<Video /></button>
                 </div>
               </>
             )}
@@ -209,13 +209,13 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
           {headMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setHeadMenu(false)} aria-hidden />
-              <div role="menu" className="pw-menu glass-in absolute right-0 top-[60px] z-50 w-56 overflow-hidden py-1.5">
-                <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onInfo(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-ink hover:bg-overlay/[0.06]"><Info className="h-4 w-4 text-ink-muted" /> {isGroup ? "Group info" : "Contact info"}</button>
-                {!self && onReport && <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onReport(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Flag className="h-4 w-4" /> Report spam</button>}
+              <div role="menu" className="pw-menu glass-in absolute right-0 top-[60px] z-50 w-60 overflow-hidden rounded-[14px]">
+                <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onInfo(); }} className="pw-mi">{isGroup ? "Group info" : "Contact info"}<Info /></button>
+                {!self && onReport && <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onReport(); }} className="pw-mi pw-mi-danger">Report spam<Flag /></button>}
                 {!isGroup && !self && onBlock && (conv.blockedByMe
-                  ? <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onBlock(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-ink hover:bg-overlay/[0.06]"><UserCheck className="h-4 w-4 text-ink-muted" /> Unblock</button>
-                  : <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onBlock(true); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Ban className="h-4 w-4" /> Block</button>)}
-                <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onDeleteChat(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-accent-extreme hover:bg-overlay/[0.06]"><Trash2 className="h-4 w-4" /> Delete chat</button>
+                  ? <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onBlock(false); }} className="pw-mi">Unblock<UserCheck /></button>
+                  : <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onBlock(true); }} className="pw-mi pw-mi-danger">Block<Ban /></button>)}
+                <button role="menuitem" type="button" onClick={() => { setHeadMenu(false); onDeleteChat(); }} className="pw-mi pw-mi-danger">Delete chat<Trash2 /></button>
               </div>
             </>
           )}
@@ -266,7 +266,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                     }}
                     className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
                     // A deleted message is a quiet placeholder: an outline, no colour fill (mine or theirs).
-                    m.deleted ? "border border-overlay/15 bg-transparent text-ink-muted" : mine ? "bubble-mine" : "bubble-theirs text-ink",
+                    m.deleted ? "bg-overlay/[0.06] text-ink-muted" : mine ? "bubble-mine" : "bubble-theirs text-ink",
                     mine ? [!startsRun && "rounded-tr-[6px]", !endsRun && "rounded-br-[6px]"] : [!startsRun && "rounded-tl-[6px]", !endsRun && "rounded-bl-[6px]"])}>
                     {isGroup && !mine && startsRun && <p className="mb-0.5 px-1 text-[13px] font-medium" style={{ color: nameColor(m.senderId) }}>{nameOf(conv.members, m.senderId, me)}</p>}
                     {quoted && (
@@ -296,16 +296,16 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                       {state && !m.deleted && <Ticks state={state} onBrand />}
                       {state === "failed" && <AlertCircle className="h-3.5 w-3.5 text-accent-extreme" aria-label="Not sent" />}
                     </span>
-                    {!m.deleted && (
-                      <button type="button" aria-label="Reply" title="Reply" onClick={() => setReply(m)}
-                        className={cn("absolute top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-overlay/10 text-ink-muted opacity-0 transition-opacity hover:text-ink group-hover:opacity-100 focus-visible:opacity-100",
-                          // just outside the bubble (left of mine, right of theirs): it never covers the text, time or ticks
-                          mine ? "-left-9" : "-right-9",
-                          // touch screens: swipe the message to the right to reply instead
-                          "[@media(hover:none)]:hidden")}>
-                        <CornerUpLeft className="h-4 w-4" />
-                      </button>
-                    )}
+                    {/* Computers: on hover, a ⌄ that opens the message's actions (Reply, Copy, Delete …). */}
+                    <button type="button" aria-label="Message options" title="More" aria-haspopup="menu"
+                      onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setMenu({ m, x: mine ? r.right - 224 : r.left, y: r.bottom + 6 }); }}
+                      className={cn("absolute top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-overlay/10 text-ink-muted opacity-0 outline-none transition-opacity hover:text-ink group-hover:opacity-100 focus-visible:opacity-100",
+                        // just outside the bubble (left of mine, right of theirs): it never covers the text, time or ticks
+                        mine ? "-left-9" : "-right-9",
+                        // touch screens: tap or hold the message for its actions, swipe right to reply
+                        "[@media(hover:none)]:hidden")}>
+                      <ChevronDown className="h-4 w-4" strokeWidth={2.25} />
+                    </button>
                     {state === "failed" && <button type="button" onClick={() => onRetry(m)} className="mt-1 block px-1 text-xs font-semibold text-white underline underline-offset-2">Not sent. Tap to retry</button>}
                   </div>
                 </div>
@@ -381,12 +381,11 @@ function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onDelet
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
   }, [onClose]);
-  const item = "flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-ink hover:bg-overlay/[0.06]";
   return createPortal(
-    <div ref={ref} role="menu" className="pw-menu glass-in fixed z-[130] w-52 overflow-hidden py-1.5" style={pos}>
-      {!deleted && <button role="menuitem" className={item} onClick={onReply}><CornerUpLeft className="h-4 w-4 text-ink-muted" /> Reply</button>}
-      {canCopy && <button role="menuitem" className={item} onClick={onCopy}><Copy className="h-4 w-4 text-ink-muted" /> Copy</button>}
-      <button role="menuitem" className={cn(item, "text-accent-extreme")} onClick={onDelete}><Trash2 className="h-4 w-4" /> Delete</button>
+    <div ref={ref} role="menu" className="pw-menu glass-in fixed z-[130] w-56 overflow-hidden rounded-[14px]" style={pos}>
+      {!deleted && <button role="menuitem" className="pw-mi" onClick={onReply}>Reply<CornerUpLeft /></button>}
+      {canCopy && <button role="menuitem" className="pw-mi" onClick={onCopy}>Copy<Copy /></button>}
+      <button role="menuitem" className="pw-mi pw-mi-danger" onClick={onDelete}>Delete<Trash2 /></button>
     </div>,
     document.body,
   );
