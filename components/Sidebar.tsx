@@ -241,7 +241,7 @@ export function Sidebar(props: {
               <li key={c.id} className="group relative [-webkit-touch-callout:none] [@media(hover:none)]:select-none" onContextMenu={(e) => { e.preventDefault(); setRowMenu({ c, x: e.clientX, y: e.clientY }); }}
                 {...holdToOpen(() => togglePick(c.id))}>
                 <button type="button" onClick={() => (picked ? togglePick(c.id) : onOpen(c.id))} aria-current={activeId === c.id ? "true" : undefined} aria-pressed={picked ? picked.has(c.id) : undefined}
-                  className={cn("flex w-full items-center gap-3 rounded-none px-2 text-left transition-colors hover:bg-overlay/[0.04]", activeId === c.id && !picked && "bg-brand/[0.12] hover:bg-brand/[0.12]", picked?.has(c.id) && "bg-brand/[0.10] hover:bg-brand/[0.10]")}>
+                  className={cn("flex w-full items-center gap-3 rounded-none px-2 text-left outline-none transition-colors hover:bg-overlay/[0.04] focus-visible:bg-overlay/[0.06]", activeId === c.id && !picked && "bg-brand/[0.12] hover:bg-brand/[0.12]", picked?.has(c.id) && "bg-brand/[0.10] hover:bg-brand/[0.10]")}>
                   {picked && (
                     <span className={cn("grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors", picked.has(c.id) ? "border-brand bg-brand text-white" : "border-overlay/30")} aria-hidden>
                       {picked.has(c.id) && <Check className="h-3.5 w-3.5" strokeWidth={3} />}

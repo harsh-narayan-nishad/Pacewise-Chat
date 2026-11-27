@@ -9,7 +9,7 @@ const TABS: { id: Tab; label: string; icon: typeof Phone }[] = [
   { id: "calls", label: "Calls", icon: Phone },
 ];
 
-/** The bottom nav, as in WhatsApp: Chats (with how many have unread messages), Status and Calls. */
+/** The bottom nav, as in WhatsApp: Chats (with how many have unread messages), Status and Calls. 60 px + its 1 px line = the message bar beside it (8 + 44 + 8 + 1), so their top lines meet in one straight line. */
 export function BottomNav({ tab, onTab, unread }: { tab: Tab; onTab: (t: Tab) => void; unread: number }) {
   return (
     <nav className="pw-bar shrink-0 border-t border-overlay/10 pb-[env(safe-area-inset-bottom)]" aria-label="Sections">
@@ -19,7 +19,7 @@ export function BottomNav({ tab, onTab, unread }: { tab: Tab; onTab: (t: Tab) =>
           return (
             <li key={id}>
               <button type="button" onClick={() => onTab(id)} aria-current={on ? "page" : undefined}
-                className={cn("relative flex h-[58px] w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors", on ? "text-brand" : "text-ink-muted hover:text-ink")}>
+                className={cn("relative flex h-[60px] w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors", on ? "text-brand" : "text-ink-muted hover:text-ink")}>
                 <span className={cn("grid h-7 w-14 place-items-center rounded-full transition-colors", on && "bg-brand/[0.14]")}>
                   <Icon className="h-[21px] w-[21px]" strokeWidth={on ? 2.2 : 1.8} />
                 </span>
