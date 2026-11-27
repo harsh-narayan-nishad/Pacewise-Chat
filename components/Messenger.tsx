@@ -750,7 +750,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   return (
     <div data-kb={kb ? "" : undefined} className="group/app flex h-[100dvh] w-full overflow-hidden bg-canvas pt-[max(env(safe-area-inset-top),12px)] md:pt-0"
       style={kb ? { position: "fixed", left: 0, right: 0, top: kb.top, height: kb.height } : undefined}>
-      <aside className={cn("pw-side relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[360px] lg:w-[400px]", activeId ? "hidden" : "flex")}>
+      <aside className={cn("pw-side relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[400px] lg:w-[460px]", activeId ? "hidden" : "flex")}>
         {panel === "profile" ? (
           <ProfilePanel user={user} onClose={() => setPanel(null)} onSaved={onUserChange} />
         ) : panel === "theme" ? (
