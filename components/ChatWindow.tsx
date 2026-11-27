@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ArrowDown, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Mic, Paperclip, Pause, Phone, Play, Smile, Trash2, UserCheck, Video, X } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, Download, ExternalLink, Forward, Search, Send, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Mic, Paperclip, Pause, Phone, Play, Smile, Trash2, UserCheck, Video, X } from "lucide-react";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import { Avatar } from "@/components/Avatar";
 import { Ticks, TypingDots, tickState } from "@/components/bits";
@@ -10,7 +10,7 @@ import { ButtonWheel } from "@/components/WheelSpinner";
 import LiquidGlass from "@/components/LiquidGlass";
 import { clockOf, dayChip, nameColor, nameOf, otherOf, presenceLabel, sameDay, systemText, titleOf, type Conversation, type Message } from "@/lib/chat";
 import { cn } from "@/lib/utils";
-import { fileLabel, fileUrl, isAudio, isImage, kindLabel, MAX_FILE_BYTES, saveFile, sizeLabel } from "@/lib/files";
+import { fileLabel, fileUrl, isAudio, isImage, isVideo, kindColor, kindLabel, MAX_FILE_BYTES, saveFile, sizeLabel } from "@/lib/files";
 import type { PlainFile } from "@/components/Messenger";
 
 const EMOJI = "😀 😂 🤣 😊 😍 🥰 😘 😎 🤩 🥳 😇 🙂 😉 😌 🤔 🤗 😅 😴 🥲 😢 😭 😤 😡 😱 🙏 👍 👎 👏 🙌 👋 💪 🤝 ✌️ 👌 ❤️ 🧡 💛 💚 💙 💜 🔥 ✨ 🎉 💯 ✅ ❌ 📚 📖 ✍️ 🧠 ⏰ ☕".split(" ");
@@ -80,8 +80,9 @@ function gestures(open: (x: number, y: number) => void, reply: (() => void) | nu
   };
 }
 
-export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, onInfo, onSend, onRetry, onDelete, onDeleteChat, onOlder, onTyping, onCopied, onCall, onReport, onBlock }: {
-  conv: Conversation; me: string; thread: Thread | undefined; plain: Record<string, Plain>; typing: Record<string, number>; hasKey: boolean;
+export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typing, hasKey, onBack, onInfo, onSend, onRetry, onDelete, onDeleteChat, onOlder, onTyping, onCopied, onCall, onReport, onBlock }: {
+  conv: Conversation; /** Every chat, for Forward. */ chats?: Conversation[]; onForward?: (to: Conversation[], text: string, file?: PlainFile) => Promise<void>;
+  me: string; thread: Thread | undefined; plain: Record<string, Plain>; typing: Record<string, number>; hasKey: boolean;
   onBack: () => void; onInfo: () => void; onSend: (text: string, replyTo: string | null, file?: File) => Promise<void>; onRetry: (m: Message) => void; onDelete: (m: Message, scope: "me" | "everyone") => Promise<void>; onDeleteChat: () => void;
   onOlder: () => Promise<void>; onTyping: () => void; onCopied: () => void;
   /** Audio call (one-to-one chats) and Report spam. */
@@ -101,6 +102,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
     ro.observe(el); setFootH(el.offsetHeight);
     return () => ro.disconnect();
   }, []);
+  const [forwarding, setForwarding] = useState<Message | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const [reply, setReply] = useState<Message | null>(null);
@@ -259,6 +261,10 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
             const p = plain[m.id];
             const quoted = m.replyTo ? items.find((x) => x.id === m.replyTo) : null;
             const state = mine ? tickState(m, conv, me) : null;
+            // How the bubble frames its attachment: photo/video edge to edge ("media", or "media-only" with no bubble), or a document card.
+            const att = !m.deleted && p && "text" in p ? p.file : undefined;
+            const visual = !!att && (isImage(att.type) || isVideo(att.type));
+            const kind: "media" | "media-only" | "doc" | null = !att || isAudio(att.type) ? null : visual ? (p && "text" in p && p.text) || quoted ? "media" : "media-only" : "doc";
             return (
               <Fragment key={m.id}>
                 {chip}
@@ -270,27 +276,31 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                   {/* No tails: a run of messages stacks, with tighter corners on the side they come from. */}
                   <div id={`msg-${m.id}`}
                     onClick={(e) => {
-                      if ((e.target as Element).closest("a, button, input, audio, img, [role=slider]") || (window.getSelection()?.toString() ?? "")) return;
+                      if ((e.target as Element).closest("a, button, input, audio, video, img, [role=slider]") || (window.getSelection()?.toString() ?? "")) return;
                       setMenu({ m, x: e.clientX, y: e.clientY });
                     }}
-                    className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
+                    className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] text-[15px] leading-[1.4] sm:max-w-[68%]",
+                    // Photos and videos sit edge to edge in a thin frame; alone, they drop the bubble entirely. Documents get a snug frame.
+                    kind === "media-only" ? "p-0" : kind === "media" || kind === "doc" ? "p-[3px]" : "px-3 pb-[7px] pt-[7px]",
                     // A deleted message is a quiet placeholder: an outline, no colour fill (mine or theirs).
-                    m.deleted ? "bg-[rgb(var(--chat-bg)/0.6)] text-ink-muted ring-1 ring-inset ring-overlay/10 backdrop-blur-[6px]" : mine ? "bubble-mine" : "bubble-theirs text-ink",
+                    m.deleted ? "bg-[rgb(var(--chat-bg)/0.6)] text-ink-muted ring-1 ring-inset ring-overlay/10 backdrop-blur-[6px]" : kind === "media-only" ? "text-ink" : mine ? "bubble-mine" : "bubble-theirs text-ink",
                     mine ? [!startsRun && "rounded-tr-[6px]", !endsRun && "rounded-br-[6px]"] : [!startsRun && "rounded-tl-[6px]", !endsRun && "rounded-bl-[6px]"])}>
-                    {isGroup && !mine && startsRun && <p className="mb-0.5 px-1 text-[13px] font-medium" style={{ color: nameColor(m.senderId) }}>{nameOf(conv.members, m.senderId, me)}</p>}
+                    {isGroup && !mine && startsRun && kind !== "media-only" && <p className={cn("mb-0.5 text-[13px] font-medium", kind ? "px-2.5 pt-1" : "px-1")} style={{ color: nameColor(m.senderId) }}>{nameOf(conv.members, m.senderId, me)}</p>}
                     {quoted && (
                       <button type="button" onClick={() => jumpTo(quoted.id)} className={cn("mb-1.5 block w-full overflow-hidden rounded-xl border-l-[3px] px-2.5 py-1.5 text-left", mine ? "border-white/80 bg-white/15" : "bg-brand/[0.07]")} style={mine ? undefined : { borderColor: nameColor(quoted.senderId) }}>
                         <span className="block text-xs font-semibold" style={{ color: mine ? "#fff" : nameColor(quoted.senderId) }}>{nameOf(conv.members, quoted.senderId, me)}</span>
                         <span className={cn("line-clamp-2 block text-xs", mine ? "text-white/80" : "text-ink-muted")}>{textOf(quoted)}</span>
                       </button>
                     )}
-                    <div className="whitespace-pre-wrap break-words px-0.5">
+                    <div className={cn("whitespace-pre-wrap break-words", !kind && "px-0.5", kind === "media-only" && "rounded-[inherit]")}>
                       {m.deleted ? (
                         <span className="inline-flex items-center gap-1.5 text-[14px] italic text-ink-muted"><Ban className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />{mine ? "You deleted this message" : "This message was deleted"}</span>
                       ) : p && "text" in p ? (
                         <>
-                          {p.file && <Attachment file={p.file} conversationId={conv.id} mine={mine} sending={m.status === "sending"} />}
-                          {p.text ? <Linked text={p.text} onBrand={mine} /> : null}
+                          {p.file && <Attachment file={p.file} conversationId={conv.id} mine={mine} sending={m.status === "sending"} edge={kind === "media-only" ? "rounded-[inherit]" : "rounded-[15px]"} />}
+                          {kind ? (kind !== "media-only" && (
+                            p.text ? <div className="px-2.5 pb-[4px] pt-1"><Linked text={p.text} onBrand={mine} /><span className={cn("inline-block", mine ? "w-[4.6rem]" : "w-12")} aria-hidden /></div> : <div className="h-[17px]" aria-hidden />
+                          )) : p.text ? <Linked text={p.text} onBrand={mine} /> : null}
                         </>
                       ) : p && "error" in p ? (
                         <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><AlertCircle className="h-4 w-4" />Couldn&apos;t decrypt this message</span>
@@ -298,9 +308,11 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                         <span className={cn("flex items-center gap-1.5 italic", mine ? "text-white/80" : "text-ink-muted")}><Lock className="h-4 w-4" />Waiting for this message. This may take a while.</span>
                       )}
                       {/* room for the time and ticks on the last line */}
-                      {!(p && "text" in p && p.file && isAudio(p.file.type) && !p.text) && <span className={cn("inline-block", m.deleted ? "w-11" : mine ? "w-[4.6rem]" : "w-12")} aria-hidden />}
+                      {!kind && !(p && "text" in p && p.file && isAudio(p.file.type) && !p.text) && <span className={cn("inline-block", m.deleted ? "w-11" : mine ? "w-[4.6rem]" : "w-12")} aria-hidden />}
                     </div>
-                    <span className={cn("absolute bottom-[7px] right-3 flex items-center gap-1 text-[11px] tabular-nums leading-none", mine && !m.deleted ? "text-white/75" : "text-ink-faint")}>
+                    <span className={cn("pointer-events-none absolute flex items-center gap-1 text-[11px] tabular-nums leading-none",
+                      // on a bare photo/video: a small dark glass pill over the picture (top-right on video, clear of its controls)
+                      kind === "media-only" ? ["right-2 rounded-full bg-black/40 px-2 py-1 text-white backdrop-blur-md", att && isVideo(att.type) ? "top-2" : "bottom-2"] : [kind === "doc" && !(p && "text" in p && p.text) ? "bottom-[5px] right-3" : "bottom-[7px] right-3", mine && !m.deleted ? "text-white/75" : "text-ink-faint"])}>
                       {clockOf(m.createdAt)}
                       {state && !m.deleted && <Ticks state={state} onBrand />}
                       {state === "failed" && <AlertCircle className="h-3.5 w-3.5 text-accent-extreme" aria-label="Not sent" />}
@@ -361,11 +373,18 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
       </div>
 
       {menu && (
-        <MessageMenu x={menu.x} y={menu.y} deleted={menu.m.deleted} canCopy={(() => { const p = plain[menu.m.id]; return !!p && "text" in p && !!p.text; })()} onClose={() => setMenu(null)}
+        <MessageMenu x={menu.x} y={menu.y} deleted={menu.m.deleted}
+          onForward={onForward && !menu.m.deleted && (() => { const p = plain[menu.m.id]; return !!p && "text" in p && (!!p.text || !!p.file); })() ? () => { setForwarding(menu.m); setMenu(null); } : undefined} canCopy={(() => { const p = plain[menu.m.id]; return !!p && "text" in p && !!p.text; })()} onClose={() => setMenu(null)}
           onReply={() => { setReply(menu.m); setMenu(null); }}
           onCopy={() => { const p = plain[menu.m.id]; if (p && "text" in p) void navigator.clipboard?.writeText(p.text).then(onCopied, () => undefined); setMenu(null); }}
           onDelete={() => { setDelMsg(menu.m); setMenu(null); }} />
       )}
+      {forwarding && onForward && (() => {
+        const p = plain[forwarding.id];
+        if (!p || !("text" in p)) return null;
+        return <ForwardSheet chats={chats.filter((c) => !c.blockedByMe)} me={me} preview={textOf(forwarding)}
+          onClose={() => setForwarding(null)} onSend={(to) => { setForwarding(null); void onForward(to, p.text, p.file); }} />;
+      })()}
       {delMsg && (
         <DeleteDialog title="Delete message?" onClose={() => setDelMsg(null)}
           body={delMsg.senderId === me && !delMsg.deleted && !delMsg.status ? "This message will be removed from your chat." : "This message will be removed from your chat only. Others in this chat will still see it."}
@@ -376,7 +395,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
   );
 }
 
-function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onDelete }: { x: number; y: number; deleted: boolean; canCopy: boolean; onClose: () => void; onReply: () => void; onCopy: () => void; onDelete: () => void }) {
+function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onForward, onDelete }: { x: number; y: number; deleted: boolean; canCopy: boolean; onClose: () => void; onReply: () => void; onCopy: () => void; onForward?: () => void; onDelete: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   useLayoutEffect(() => {
@@ -395,8 +414,74 @@ function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onDelet
   return createPortal(
     <div ref={ref} role="menu" className="pw-menu glass-in fixed z-[130] w-56 overflow-hidden rounded-[14px]" style={pos}>
       {!deleted && <button role="menuitem" className="pw-mi" onClick={onReply}>Reply<CornerUpLeft /></button>}
+      {onForward && <button role="menuitem" className="pw-mi" onClick={onForward}>Forward<Forward /></button>}
       {canCopy && <button role="menuitem" className="pw-mi" onClick={onCopy}>Copy<Copy /></button>}
       <button role="menuitem" className="pw-mi pw-mi-danger" onClick={onDelete}>Delete<Trash2 /></button>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * Forward to: a sheet listing every chat (search by name), pick one or many, then Send. The message goes to each one,
+ * encrypted for that chat.
+ */
+function ForwardSheet({ chats, me, preview, onClose, onSend }: { chats: Conversation[]; me: string; preview: string; onClose: () => void; onSend: (to: Conversation[]) => void }) {
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  const shown = chats.filter((c) => titleOf(c, me).toLowerCase().includes(q.trim().toLowerCase()));
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const to = chats.filter((c) => picked.includes(c.id));
+  return createPortal(
+    <div className="fade-in fixed inset-0 z-[160] flex items-end justify-center bg-black/45 sm:items-center sm:px-6" role="dialog" aria-modal="true" aria-label="Forward message" onClick={onClose}>
+      <div className="pw-menu glass-in flex max-h-[min(82dvh,640px)] w-full flex-col overflow-hidden rounded-b-none sm:max-w-[400px] sm:rounded-b-[14px]" onClick={(e) => e.stopPropagation()}>
+        <div className="relative flex h-12 shrink-0 items-center justify-center px-4">
+          <button type="button" onClick={onClose} className="absolute left-4 text-[15px] text-brand">Cancel</button>
+          <h2 className="text-[16px] font-semibold text-ink">Forward to</h2>
+        </div>
+        <div className="shrink-0 px-4 pb-2">
+          <label className="flex h-9 items-center gap-2 rounded-[10px] bg-overlay/[0.07] px-2.5 text-ink-muted">
+            <Search className="h-4 w-4 shrink-0" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search" className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted" />
+          </label>
+        </div>
+        <ul className="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {shown.length === 0 && <li className="py-10 text-center text-[14px] text-ink-muted">No chats found</li>}
+          {shown.map((c) => {
+            const on = picked.includes(c.id), o = otherOf(c, me), group = c.type === "group";
+            return (
+              <li key={c.id}>
+                <button type="button" onClick={() => toggle(c.id)} aria-pressed={on} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-overlay/[0.05]">
+                  <Avatar id={group ? c.id : o?.id ?? c.id} name={titleOf(c, me)} url={o?.avatarUrl} group={group} size={40} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-medium text-ink">{titleOf(c, me)}</span>
+                    {group && <span className="block truncate text-[12px] text-ink-muted">{c.members.length} members</span>}
+                  </span>
+                  <span className={cn("grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border-2 transition-colors", on ? "border-brand bg-brand text-white" : "border-overlay/25")}>
+                    {on && <Check className="h-3.5 w-3.5" strokeWidth={3.2} />}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {/* what is being forwarded, and to whom; Send when at least one chat is picked */}
+        <div className="flex shrink-0 items-center gap-3 border-t border-overlay/10 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-medium text-ink">{to.length ? to.map((c) => titleOf(c, me)).join(", ") : "Choose chats"}</p>
+            <p className="truncate text-[12px] text-ink-muted">{preview}</p>
+          </div>
+          <button type="button" disabled={!to.length} onClick={() => onSend(to)} aria-label="Send"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-white transition-opacity disabled:opacity-35">
+            <Send className="h-[18px] w-[18px] -translate-x-px translate-y-px" />
+          </button>
+        </div>
+      </div>
     </div>,
     document.body,
   );
@@ -546,7 +631,7 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
     <div className="pw-bar pw-bar-see shrink-0 border-t border-overlay/10 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 group-data-[kb]/app:pb-2 sm:px-4">
       {attached && (
         <div className="mb-2 flex items-center gap-3 rounded-2xl bg-brand/[0.07] p-2.5">
-          {isImage(attached.type) ? <LocalThumb file={attached} /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><FileText className="h-5 w-5" /></span>}
+          {isImage(attached.type) ? <LocalThumb file={attached} /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ background: isVideo(attached.type) ? "#1C1C1E" : kindColor(attached.name, attached.type) }}>{isVideo(attached.type) ? <Video className="h-5 w-5" /> : <FileText className="h-5 w-5" />}</span>}
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[14px] font-medium text-ink">{attached.name}</span>
             <span className="block text-xs text-ink-muted">{kindLabel(attached.name, attached.type)} · {sizeLabel(attached.size)} · end-to-end encrypted</span>
@@ -631,54 +716,137 @@ function LocalThumb({ file }: { file: File }) {
 }
 
 /**
- * An attachment in a bubble. Images show inline (downloaded and decrypted here, on this device); any other file is a
- * card with its name, kind and size that decrypts and saves on tap.
+ * An attachment in a bubble. Photos fill the bubble and open full screen; videos play in place; any other file is a
+ * document card (coloured type badge, name, size) that opens (PDFs) or saves on tap. Everything decrypts on this device.
  */
-function Attachment({ file, conversationId, mine, sending }: { file: PlainFile; conversationId: string; mine: boolean; sending: boolean }) {
+function Attachment({ file, conversationId, mine, sending, edge }: { file: PlainFile; conversationId: string; mine: boolean; sending: boolean; edge: string }) {
   const [url, setUrl] = useState<string | null>(file.local ?? null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const image = isImage(file.type);
+  const [view, setView] = useState(false);
+  const image = isImage(file.type), video = isVideo(file.type);
   useEffect(() => {
-    if (!image || file.local || !file.id) return;
+    if (!(image || video) || file.local || !file.id) return;
     let live = true;
     fileUrl(conversationId, file).then((u) => { if (live) setUrl(u); }, () => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, [image, file, conversationId]);
+  }, [image, video, file, conversationId]);
 
-  const open = async () => {
+  const save = async () => {
     if (!file.id || busy) return;
     setBusy(true); setFailed(false);
     try { await saveFile(conversationId, file); } catch { setFailed(true); } finally { setBusy(false); }
+  };
+  const kind = kindLabel(file.name, file.type);
+  const pdf = kind === "PDF";
+  // PDFs open in the browser's own viewer; if a popup is blocked, it saves instead.
+  const openDoc = async () => {
+    if (!pdf) return void save();
+    if (!file.id || busy) return;
+    const tab = window.open("", "_blank");
+    setBusy(true); setFailed(false);
+    try { const u = await fileUrl(conversationId, file); if (tab) tab.location.href = u; else await saveFile(conversationId, file); }
+    catch { tab?.close(); setFailed(true); } finally { setBusy(false); }
   };
 
   if (isAudio(file.type)) return <VoiceNote file={file} conversationId={conversationId} mine={mine} sending={sending} />;
   if (image) {
     return (
-      <button type="button" onClick={() => void open()} disabled={!file.id} aria-label={`Save ${file.name}`} className="mb-1.5 block w-fit overflow-hidden rounded-[14px]">
-        {url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={file.name} className={cn("block h-auto max-h-72 w-auto max-w-[260px] object-cover", sending && "opacity-70")} />
-        ) : (
-          <span className={cn("flex h-40 w-[240px] items-center justify-center text-xs", mine ? "bg-white/15 text-white/80" : "bg-overlay/[0.06] text-ink-muted")}>
-            {failed ? "Couldn't load this photo" : <ButtonWheel size={18} />}
-          </span>
-        )}
-      </button>
+      <>
+        <button type="button" onClick={() => url && setView(true)} aria-label={`Open ${file.name}`} className={cn("relative block w-fit overflow-hidden bg-overlay/[0.06]", edge)}>
+          {url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt={file.name} className={cn("block max-h-[340px] min-h-[110px] w-auto min-w-[150px] max-w-[min(300px,68vw)] object-cover", sending && "opacity-70")} />
+          ) : (
+            <span className={cn("flex h-[200px] w-[min(260px,62vw)] items-center justify-center text-xs", mine ? "text-ink-muted" : "text-ink-muted")}>
+              {failed ? "Couldn't load this photo" : <ButtonWheel size={18} />}
+            </span>
+          )}
+          {sending && <span className="absolute inset-0 grid place-items-center"><span className="grid h-11 w-11 place-items-center rounded-full bg-black/45 text-white backdrop-blur"><ButtonWheel size={18} /></span></span>}
+        </button>
+        {view && url && <MediaViewer url={url} name={file.name} size={file.size} onSave={file.id ? () => void save() : undefined} onClose={() => setView(false)} />}
+      </>
     );
   }
+  if (video) return <VideoClip url={url} failed={failed} sending={sending} size={file.size} edge={edge} />;
   return (
-    <button type="button" onClick={() => void open()} disabled={!file.id || busy} aria-label={`Save ${file.name}`}
-      className={cn("mb-1.5 flex w-full min-w-[220px] max-w-[300px] items-center gap-3 rounded-[14px] p-2.5 text-left", mine ? "bg-white/15" : "bg-brand/[0.07]")}>
-      <span className={cn("flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl text-[9px] font-bold tracking-wide", mine ? "bg-white text-brand" : "bg-brand text-white")}>
-        <FileText className="h-[18px] w-[18px]" />{kindLabel(file.name, file.type)}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-[14px] font-medium", mine ? "text-white" : "text-ink")}>{file.name}</span>
-        <span className={cn("block text-xs", mine ? "text-white/75" : "text-ink-muted")}>{sending ? "Encrypting and sending…" : failed ? "Couldn't download. Tap to retry" : sizeLabel(file.size)}</span>
-      </span>
-      {file.id && <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", mine ? "bg-white/20 text-white" : "bg-brand/10 text-brand")}>{busy ? <ButtonWheel size={14} /> : <ArrowDown className="h-4 w-4" strokeWidth={2.25} />}</span>}
-    </button>
+    <div className={cn("flex w-[min(300px,70vw)] items-center gap-3 rounded-[15px] p-2.5", mine ? "bg-white/[0.14]" : "bg-overlay/[0.05]")}>
+      <button type="button" onClick={() => void openDoc()} disabled={!file.id || busy} aria-label={pdf ? `Open ${file.name}` : `Save ${file.name}`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        {/* a small page in the file type's colour, like Files/Finder */}
+        <span className="relative flex h-12 w-10 shrink-0 items-end justify-center overflow-hidden rounded-[8px] pb-1.5 text-[9px] font-bold tracking-wide text-white shadow-[0_1px_2px_rgba(0,0,0,0.18)]" style={{ background: kindColor(file.name, file.type) }}>
+          <span className="absolute right-0 top-0 h-3 w-3 rounded-bl-[4px] bg-white/35" aria-hidden />
+          <FileText className="absolute top-2 h-4 w-4 opacity-90" strokeWidth={2} />{kind}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={cn("line-clamp-2 break-words text-[14px] font-medium leading-snug", mine ? "text-white" : "text-ink")}>{file.name}</span>
+          <span className={cn("mt-0.5 block text-[12px]", mine ? "text-white/75" : "text-ink-muted")}>
+            {sending ? "Encrypting and sending…" : failed ? "Couldn't download. Tap to retry" : `${kind} · ${sizeLabel(file.size)}`}
+          </span>
+        </span>
+      </button>
+      {file.id && (
+        <button type="button" onClick={() => void save()} disabled={busy} aria-label={`Save ${file.name}`}
+          className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors", mine ? "bg-white/20 text-white hover:bg-white/30" : "bg-brand/10 text-brand hover:bg-brand/15")}>
+          {busy ? <ButtonWheel size={14} /> : <ArrowDown className="h-[18px] w-[18px]" strokeWidth={2.25} />}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A video in a bubble: its first frame with a play button and length; plays in place with the system controls. */
+function VideoClip({ url, failed, sending, size, edge }: { url: string | null; failed: boolean; sending: boolean; size: number; edge: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [dur, setDur] = useState(0);
+  const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  return (
+    <div className={cn("relative w-[min(280px,66vw)] overflow-hidden bg-black", edge)}>
+      {url ? (
+        <video ref={ref} src={`${url}#t=0.1`} preload="metadata" playsInline controls={playing}
+          onLoadedMetadata={(e) => setDur(e.currentTarget.duration || 0)} onEnded={() => setPlaying(false)}
+          className="block max-h-[340px] min-h-[150px] w-full object-cover" />
+      ) : (
+        <div className="grid aspect-video w-full place-items-center text-xs text-white/70">{failed ? "Couldn't load this video" : <ButtonWheel size={18} />}</div>
+      )}
+      {url && !playing && (
+        <button type="button" aria-label="Play video" onClick={() => { setPlaying(true); void ref.current?.play(); }} disabled={sending}
+          className="absolute inset-0 grid place-items-center bg-gradient-to-t from-black/35 via-transparent to-transparent">
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-black/45 text-white backdrop-blur-md">
+            {sending ? <ButtonWheel size={18} /> : <Play className="ml-0.5 h-6 w-6" fill="currentColor" strokeWidth={0} />}
+          </span>
+          <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/40 px-2 py-1 text-[11px] font-medium leading-none text-white backdrop-blur-md">
+            <Video className="h-3 w-3" strokeWidth={2.25} />{dur ? clock(dur) : sizeLabel(size)}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A photo full screen, Photos-style: black, name and size on top, Save and Close; Esc or a tap outside closes. */
+function MediaViewer({ url, name, size, onSave, onClose }: { url: string; name: string; size: number; onSave?: () => void; onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return createPortal(
+    <div role="dialog" aria-label={name} className="fade-in fixed inset-0 z-[300] flex flex-col bg-black/95" onClick={onClose}>
+      <div className="flex items-center gap-3 px-4 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] text-white" onClick={(e) => e.stopPropagation()}>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-semibold">{name}</p>
+          <p className="text-[12px] text-white/60">{sizeLabel(size)}</p>
+        </div>
+        {onSave && <button type="button" onClick={onSave} aria-label="Save photo" className="grid h-10 w-10 place-items-center rounded-full bg-white/10 transition-colors hover:bg-white/20"><Download className="h-[18px] w-[18px]" /></button>}
+        <button type="button" onClick={onClose} aria-label="Close" className="grid h-10 w-10 place-items-center rounded-full bg-white/10 transition-colors hover:bg-white/20"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={name} onClick={(e) => e.stopPropagation()} className="max-h-full max-w-full rounded-lg object-contain" />
+      </div>
+    </div>,
+    document.body,
   );
 }
 

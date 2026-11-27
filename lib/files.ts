@@ -21,7 +21,19 @@ export function kindLabel(name: string, type: string): string {
 
 /** What a chat list / notification says for a message with a file. */
 export const isAudio = (type: string) => /^audio\//i.test(type);
-export const fileLabel = (f: { name: string; type: string }) => (isImage(f.type) ? "📷 Photo" : isAudio(f.type) ? "🎤 Voice message" : `📎 ${f.name}`);
+/** Videos that browsers play inline. */
+export const isVideo = (type: string) => /^video\/(mp4|webm|ogg|quicktime)$/i.test(type);
+/** A document's badge colour by kind, as in Files/Finder: PDF red, Word blue, Excel green, slides orange, archives grey. */
+export function kindColor(name: string, type: string): string {
+  const k = kindLabel(name, type).toLowerCase();
+  if (k === "pdf") return "#E5484D";
+  if (/^(doc|docx|rtf|odt|pages|txt|md)$/.test(k)) return "#2F6FED";
+  if (/^(xls|xlsx|csv|ods|number|numbers)$/.test(k)) return "#1E9E5A";
+  if (/^(ppt|pptx|odp|key)$/.test(k)) return "#F0782C";
+  if (/^(zip|rar|7z|tar|gz)$/.test(k)) return "#7A7F87";
+  return "#6E56CF";
+}
+export const fileLabel = (f: { name: string; type: string }) => (isImage(f.type) ? "📷 Photo" : isAudio(f.type) ? "🎤 Voice message" : isVideo(f.type) ? "🎥 Video" : `📎 ${f.name}`);
 
 /** Downloaded and decrypted files, as local addresses (blob URLs), kept while the page is open. */
 const cache = new Map<string, Promise<string>>();

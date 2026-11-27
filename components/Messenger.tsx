@@ -22,7 +22,7 @@ import { ReportDialog } from "@/components/ReportDialog";
 import { ApiError, type User } from "@/lib/api";
 import { chatApi, otherOf, streamUrl, titleOf, type ChatEvent, type Conversation, type Message } from "@/lib/chat";
 import { decryptMessage, encryptFile, encryptMessage, type FileMeta, type Identity } from "@/lib/crypto";
-import { fileLabel } from "@/lib/files";
+import { fileLabel, fileUrl } from "@/lib/files";
 import { Keyring } from "@/lib/keyring";
 import { cn } from "@/lib/utils";
 
@@ -559,8 +559,8 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
     }
   }, [ring, me, upsertMessage, refresh]);
 
-  const send = useCallback(async (text: string, replyTo: string | null, file?: File) => {
-    const c = convsRef.current.find((x) => x.id === activeRef.current);
+  const sendTo = useCallback(async (cid: string | null, text: string, replyTo: string | null, file?: File) => {
+    const c = convsRef.current.find((x) => x.id === cid);
     if (!c) return;
     const id = crypto.randomUUID();
     lastTyping.current = 0; // the next keystroke announces "typing…" again straight away
@@ -578,6 +578,31 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
       flash(e instanceof Error ? e.message : "Message not sent.");
     }
   }, [me, upsertMessage, deliver, flash]);
+  const send = useCallback((text: string, replyTo: string | null, file?: File) => sendTo(activeRef.current, text, replyTo, file), [sendTo]);
+
+  /**
+   * Forward a message to other chats. Each chat has its own key, so the text is encrypted again for each one, and an
+   * attachment is decrypted here and uploaded again (once per chat). Chats whose history is not open yet stay unloaded,
+   * so opening them later still fetches everything.
+   */
+  const forward = useCallback(async (targets: Conversation[], text: string, file: PlainFile | undefined, fromCid: string) => {
+    let blob: File | undefined;
+    try {
+      if (file) {
+        const href = file.local ?? (file.id ? await fileUrl(fromCid, file) : null);
+        if (!href) throw new Error("This attachment is still sending.");
+        blob = new File([await (await fetch(href)).blob()], file.name, { type: file.type });
+      }
+    } catch (e) { flash(e instanceof Error ? e.message : "Couldn't forward this attachment."); return; }
+    for (const c of targets) {
+      if (!threadsRef.current[c.id]) {
+        setThreads((t) => (t[c.id] ? t : { ...t, [c.id]: { items: [], hasMore: false, loaded: false } }));
+        threadsRef.current = { ...threadsRef.current, [c.id]: { items: [], hasMore: false, loaded: false } };
+      }
+      await sendTo(c.id, text, null, blob);
+    }
+    flash(targets.length === 1 ? `Forwarded to ${titleOf(targets[0], me)}.` : `Forwarded to ${targets.length} chats.`);
+  }, [sendTo, flash, me]);
 
   const retry = useCallback(async (m: Message) => {
     const p = plainRef.current[m.id];
@@ -754,7 +779,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
       <section className={cn("relative h-full min-w-0 flex-1 flex-col", activeId ? "flex" : "hidden md:flex")}>
         {active ? (
           <ChatWindow key={active.id} onCall={(video) => callRef.current?.start(active, video)} onReport={() => setReporting(active)} onBlock={(on) => (on ? setBlocking(active) : void setBlocked(otherOf(active, me)?.id ?? "", false).catch((e) => flash(e instanceof Error ? e.message : "Could not unblock.")))} conv={active} me={me} thread={threads[active.id]} plain={plain} typing={typing[active.id] ?? {}} hasKey={!!ring.get(active.id, active.epoch)}
-            onBack={() => { setActiveId(null); setInfo(false); }} onInfo={() => setInfo(true)} onSend={send} onRetry={(m) => void retry(m)} onDelete={remove} onDeleteChat={() => setDeleting(active)}
+            onBack={() => { setActiveId(null); setInfo(false); }} onInfo={() => setInfo(true)} chats={convs} onForward={(cs, text, file) => forward(cs, text, file, active.id)} onSend={send} onRetry={(m) => void retry(m)} onDelete={remove} onDeleteChat={() => setDeleting(active)}
             onOlder={() => loadOlder(active.id)} onTyping={typed} onCopied={() => flash("Message copied.")} />
         ) : (
           <div className="chat-wallpaper chat-aurora flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
