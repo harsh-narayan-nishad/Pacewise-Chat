@@ -26,6 +26,7 @@ import { Avatar } from "@/components/Avatar";
 import { API_BASE, ApiError, session } from "@/lib/api";
 import {
   chatApi,
+  type CallLogEntry,
   type CallPerson,
   type CallSignal,
   type ChatEvent,
@@ -34,6 +35,7 @@ import {
   type PeerSignal,
 } from "@/lib/chat";
 import { cn } from "@/lib/utils";
+import { addLocalCall } from "@/lib/calls";
 
 /**
  * Audio and video calls. A call starts in a one-to-one chat, and more people can be added to it while it runs (each
@@ -239,6 +241,7 @@ export const CallLayer = forwardRef<
   };
   /** Show how the call ended for a moment, then close the screen. */
   const finish = (text: string) => {
+    if (callRef.current) announce(callRef.current, text); // the chat shows its call card straight away
     cleanup();
     // A call that was talking shows how long it lasted: "Call ended · 05:23".
     setCall((c) => (c ? { ...c, phase: "ended", note: c.startedAt ? `${text} · ${clock(Math.max(0, Math.floor((Date.now() - c.startedAt) / 1000)))}` : text } : c));
@@ -309,6 +312,22 @@ export const CallLayer = forwardRef<
   /** Group call: whose ⋯ menu is open. */
   const [tileMenu, setTileMenu] = useState<string | null>(null);
   useEffect(() => { setSwapped(false); setFeatured(null); setTileMenu(null); }, [call?.callId]);
+  // when this call started ringing, for the chat's call card
+  const ringAt = useRef<{ id: string; at: number } | null>(null);
+  if (call && ringAt.current?.id !== call.callId) ringAt.current = { id: call.callId, at: Date.now() };
+  /** Tell the open chat how this call went, so its card appears at once (the server's record replaces it shortly). */
+  const announce = (c: Call, why: string) => {
+    const now = Date.now(), out = c.hostId === me;
+    const outcome = c.startedAt ? "answered" : /declin/i.test(why) ? "declined" : /busy|another call/i.test(why) ? "busy" : out ? (/no answer/i.test(why) ? "unanswered" : "cancelled") : "missed";
+    const started = ringAt.current?.id === c.callId ? ringAt.current.at : c.startedAt ?? now;
+    const entry: CallLogEntry = {
+      id: `local-${c.callId}`, callId: c.callId, conversationId: c.convId, direction: out ? "out" : "in", video: c.video, outcome,
+      startedAt: new Date(started).toISOString(), answeredAt: c.startedAt ? new Date(c.startedAt).toISOString() : null, endedAt: new Date(now).toISOString(),
+      seconds: c.startedAt ? Math.max(0, Math.round((now - c.startedAt) / 1000)) : 0,
+      peers: [{ id: c.peer.id, name: c.peer.name, avatarUrl: c.peer.avatarUrl ?? null }],
+    };
+    addLocalCall(entry);
+  };
   // a ⋯ menu closes on a tap anywhere else
   useEffect(() => {
     if (!tileMenu) return;
@@ -623,6 +642,7 @@ export const CallLayer = forwardRef<
   const decline = () => {
     const c = callRef.current;
     if (!c) return;
+    announce(c, "Declined");
     void send(c.convId, { callId: c.callId, kind: "decline" });
     cleanup();
     setCall(null);

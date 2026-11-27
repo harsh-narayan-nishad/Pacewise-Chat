@@ -14,6 +14,7 @@ import { applyLook, loadLook } from "@/lib/look";
 import { useFullScreen } from "@/lib/fullscreen";
 import { disablePush, enablePush } from "@/lib/push";
 import { ChatWindow } from "@/components/ChatWindow";
+import { loadCalls } from "@/lib/calls";
 import { InfoPanel } from "@/components/InfoPanel";
 import { Logo } from "@/components/Logo";
 import { DeleteDialog, type DeleteChoice, type EveryoneChoice } from "@/components/DeleteDialog";
@@ -323,6 +324,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
     try {
       do {
         again.current = false;
+        void loadCalls().catch(() => undefined); // call cards are ready before a chat opens
         let list = await chatApi.conversations();
         // Open my copies of each chat's keys; seed new chats and share keys with members who are waiting.
         list = await Promise.all(list.map(async (c) => (await ring.sync(c).catch(() => null)) ?? c));
@@ -748,7 +750,7 @@ export function Messenger({ user, identity, light, setLight, onLock, onSignOut, 
   return (
     <div data-kb={kb ? "" : undefined} className="group/app flex h-[100dvh] w-full overflow-hidden bg-canvas pt-[max(env(safe-area-inset-top),12px)] md:pt-0"
       style={kb ? { position: "fixed", left: 0, right: 0, top: kb.top, height: kb.height } : undefined}>
-      <aside className={cn("relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[360px] lg:w-[400px]", activeId ? "hidden" : "flex")}>
+      <aside className={cn("pw-side relative h-full w-full shrink-0 flex-col border-r border-overlay/10 bg-canvas md:flex md:w-[360px] lg:w-[400px]", activeId ? "hidden" : "flex")}>
         {panel === "profile" ? (
           <ProfilePanel user={user} onClose={() => setPanel(null)} onSaved={onUserChange} />
         ) : panel === "theme" ? (

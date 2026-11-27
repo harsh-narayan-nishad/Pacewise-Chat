@@ -1,15 +1,16 @@
 "use client";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ArrowDown, Check, Download, ExternalLink, Forward, Search, Send, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Mic, Paperclip, Pause, Phone, Play, Smile, Trash2, UserCheck, Video, X } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, CircleCheck, Download, ArrowDownLeft, ArrowUpRight, ExternalLink, Forward, Search, Send, ArrowUp, Ban, ChevronDown, ChevronLeft, Copy, CornerUpLeft, FileText, Flag, Info, KeyRound, Lock, MoreHorizontal, Mic, Paperclip, Pause, Phone, Play, Smile, Trash2, UserCheck, Video, X } from "lucide-react";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import { Avatar } from "@/components/Avatar";
 import { Ticks, TypingDots, tickState } from "@/components/bits";
 import type { Plain, Thread } from "@/components/Messenger";
 import { ButtonWheel } from "@/components/WheelSpinner";
 import LiquidGlass from "@/components/LiquidGlass";
-import { clockOf, dayChip, nameColor, nameOf, otherOf, presenceLabel, sameDay, systemText, titleOf, type Conversation, type Message } from "@/lib/chat";
+import { chatApi, clockOf, dayChip, nameColor, nameOf, otherOf, presenceLabel, sameDay, systemText, titleOf, type CallLogEntry, type Conversation, type Message } from "@/lib/chat";
 import { cn } from "@/lib/utils";
+import { dropCalls, getCalls, isLocalCall, loadCalls, subscribeCalls } from "@/lib/calls";
 import { fileLabel, fileUrl, isAudio, isImage, isVideo, kindColor, kindLabel, MAX_FILE_BYTES, saveFile, sizeLabel } from "@/lib/files";
 import type { PlainFile } from "@/components/Messenger";
 
@@ -103,6 +104,41 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
     return () => ro.disconnect();
   }, []);
   const [forwarding, setForwarding] = useState<Message | null>(null);
+  // Select mode (as in WhatsApp): tick messages and calls, then delete them together.
+  const [sel, setSel] = useState<string[] | null>(null);
+  const toggleSel = (id: string) => setSel((s) => (s ? (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]) : s));
+  const [delSel, setDelSel] = useState(false);
+  const [cardMenu, setCardMenu] = useState<{ row: CallRow; x: number; y: number } | null>(null);
+  const [delCall, setDelCall] = useState<CallRow | null>(null);
+  useEffect(() => {
+    if (!sel) return;
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setSel(null); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [sel]);
+  // Calls in this chat, shown in the timeline like messages, from the app-wide call store (lib/calls.ts): a chat
+  // opens with its cards in place, and a call that just ended appears at once.
+  const mineOf = useCallback((l: CallLogEntry[] | null) => (l ?? []).filter((c) => c.conversationId === conv.id && c.outcome !== "ringing"), [conv.id]);
+  const [calls, setCalls] = useState<CallLogEntry[]>(() => mineOf(getCalls()));
+  const [callsReady, setCallsReady] = useState(getCalls() !== null);
+  useEffect(() => {
+    let live = true;
+    const off = subscribeCalls(() => { if (live) { setCalls(mineOf(getCalls())); setCallsReady(true); } });
+    setCalls(mineOf(getCalls()));
+    void loadCalls(true).catch(() => undefined).finally(() => { if (live) setCallsReady(true); });
+    const wait = window.setTimeout(() => { if (live) setCallsReady(true); }, 800); // never hold the chat back for long
+    return () => { live = false; off(); window.clearTimeout(wait); };
+  }, [mineOf]);
+  // Messages and calls in one timeline, by time. While older messages are still unloaded, older calls wait too;
+  // calls from before the chat was cleared stay hidden.
+  const rows = useMemo(() => {
+    const from = thread?.hasMore && items[0] ? items[0].createdAt : "";
+    const cleared = conv.clearedAt ?? "";
+    const callRows: CallRow[] = calls
+      .filter((c) => c.startedAt >= from && c.startedAt > cleared)
+      .map((c) => ({ id: `call-${c.callId}`, kind: "call", createdAt: c.startedAt, senderId: c.direction === "out" ? me : c.peers[0]?.id ?? "", call: c }));
+    return [...items, ...callRows].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }, [items, calls, thread?.hasMore, conv.clearedAt, me]);
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const [reply, setReply] = useState<Message | null>(null);
@@ -149,6 +185,8 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
     }
     lastCount.current = items.length;
   }, [items, thread?.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // call cards arrive just after the messages: stay pinned to the newest item if already at the bottom
+  useLayoutEffect(() => { if (atBottom) toBottom(); }, [calls, callsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onScroll = async () => {
     const el = scroller.current;
@@ -177,6 +215,27 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
     if (m.deleted) return "This message was deleted";
     const p = plain[m.id];
     return p && "text" in p ? (p.text || (p.file ? fileLabel(p.file) : "")) : "Encrypted message";
+  };
+
+  /** In select mode: the row gets a round check on the left, a tint when ticked, and a tap anywhere toggles it. */
+  const pick = (id: string, node: ReactNode) => {
+    if (!sel) return node;
+    const on = sel.includes(id);
+    return (
+      <div className={cn("relative -mx-3 px-3 pl-11 transition-colors sm:-mx-6 sm:px-6 sm:pl-14", on && "bg-brand/[0.08]")}>
+        {node}
+        <button type="button" onClick={() => toggleSel(id)} aria-pressed={on} aria-label={on ? "Deselect" : "Select"} className="absolute inset-0 z-[6] flex items-center pl-3 outline-none sm:pl-6">
+          <span className={cn("grid h-[22px] w-[22px] place-items-center rounded-full border-2 transition-colors", on ? "border-brand bg-brand text-white" : "border-overlay/30 bg-canvas/60")}>
+            {on && <Check className="h-3.5 w-3.5" strokeWidth={3.2} />}
+          </span>
+        </button>
+      </div>
+    );
+  };
+  const removeCalls = async (ids: string[]) => {
+    const server = ids.filter((id) => !id.startsWith("local-"));
+    if (server.length) await chatApi.deleteCalls(server);
+    dropCalls(ids);
   };
 
   const waitingFor = !isGroup && other && other.id !== me && !other.publicKey ? other.name.split(" ")[0] : null;
@@ -235,10 +294,10 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
       </header>
 
       <div className="chat-aurora relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={() => void onScroll()} style={{ paddingBottom: footH + 12 }} className="chat-wallpaper thin-scroll absolute inset-0 overflow-y-auto overflow-x-hidden px-3 pt-[4.75rem] sm:px-6">
+        <div ref={scroller} onScroll={() => void onScroll()} style={{ paddingBottom: footH + 12 }} className="chat-wallpaper thin-scroll absolute inset-0 overflow-y-auto ![background-attachment:scroll] overflow-x-hidden px-3 pt-[4.75rem] sm:px-6">
           {/* One centred reading column on wide screens, so a conversation never stretches edge to edge. */}
           <div className="mx-auto w-full max-w-[860px]">
-          {!thread?.loaded && <div className="flex justify-center py-10 text-ink-muted"><ButtonWheel size={22} /></div>}
+          {(!thread?.loaded || !callsReady) && <div className="flex justify-center py-10 text-ink-muted"><ButtonWheel size={22} /></div>}
           {thread?.hasMore && <div className="flex justify-center py-2 text-ink-muted">{loadingOlder ? <ButtonWheel size={18} /> : null}</div>}
           {thread?.loaded && !thread.hasMore && (
             <button type="button" onClick={onInfo} className="e2e-notice mx-auto mb-4 mt-2 flex max-w-md items-start gap-2.5 rounded-2xl px-3.5 py-2.5 text-left text-[12.5px] leading-snug">
@@ -247,17 +306,21 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
             </button>
           )}
 
-          {items.map((m, i) => {
-            const prev = items[i - 1];
+          {callsReady && rows.map((m, i) => {
+            const prev = rows[i - 1];
             const newDay = !prev || !sameDay(prev.createdAt, m.createdAt);
-            const chip = newDay ? <div className="sticky top-1 z-10 my-2 flex justify-center"><span className="pw-chip rounded-full px-3 py-1 text-[12px] font-medium text-ink-muted">{dayChip(m.createdAt)}</span></div> : null;
+            const chip = newDay ? <div className="sticky top-1 z-10 my-2 flex justify-center"><span className="pw-chip rounded-full px-3 pb-[6px] pt-[5px] text-[12.5px] font-medium leading-[15px] text-ink-muted">{dayChip(m.createdAt)}</span></div> : null;
+            if (m.kind === "call") {
+              const startsCallRun = newDay || !prev || prev.kind !== "text" || prev.senderId !== m.senderId;
+              return <Fragment key={m.id}>{chip}{pick(m.id, <CallCard fresh={isLocalCall(m.call)} call={m.call} canCall={!sel && !isGroup && !!onCall && !conv.blockedByMe} onCall={onCall} first={startsCallRun} onMenu={sel ? undefined : (x, y) => setCardMenu({ row: m, x, y })} />)}</Fragment>;
+            }
             if (m.kind === "system") {
               return <Fragment key={m.id}>{chip}<div className="my-2 flex justify-center"><span className="pw-chip max-w-[85%] rounded-2xl px-3 py-1 text-center text-[12px] text-ink-muted">{systemText(m, conv.members, me)}</span></div></Fragment>;
             }
             const mine = m.senderId === me;
-            const startsRun = newDay || !prev || prev.kind === "system" || prev.senderId !== m.senderId;
-            const next = items[i + 1];
-            const endsRun = !next || next.kind === "system" || next.senderId !== m.senderId || !sameDay(m.createdAt, next.createdAt);
+            const startsRun = newDay || !prev || prev.kind !== "text" || prev.senderId !== m.senderId;
+            const next = rows[i + 1];
+            const endsRun = !next || next.kind !== "text" || next.senderId !== m.senderId || !sameDay(m.createdAt, next.createdAt);
             const p = plain[m.id];
             const quoted = m.replyTo ? items.find((x) => x.id === m.replyTo) : null;
             const state = mine ? tickState(m, conv, me) : null;
@@ -268,9 +331,9 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
             return (
               <Fragment key={m.id}>
                 {chip}
-                <div className={cn("group relative flex touch-pan-y [-webkit-touch-callout:none] [@media(hover:none)]:select-none", mine ? "justify-end" : "justify-start", startsRun ? "mt-2" : "mt-0.5")}
-                  onContextMenu={(e) => { e.preventDefault(); setMenu({ m, x: e.clientX, y: e.clientY }); }}
-                  {...gestures((x, y) => setMenu({ m, x, y }), m.deleted ? null : () => setReply(m))}>
+                {pick(m.id, <div className={cn("group relative flex touch-pan-y [-webkit-touch-callout:none] [@media(hover:none)]:select-none", mine ? "justify-end" : "justify-start", startsRun ? "mt-3" : "mt-0.5")}
+                  onContextMenu={(e) => { e.preventDefault(); if (!sel) setMenu({ m, x: e.clientX, y: e.clientY }); }}
+                  {...(sel ? {} : gestures((x, y) => setMenu({ m, x, y }), m.deleted ? null : () => setReply(m)))}>
                   {/* the reply arrow that fades in while the message is swiped to the right */}
                   {!m.deleted && <span data-swipe-icon className="pointer-events-none absolute left-1 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-overlay/10 text-ink-muted opacity-0" aria-hidden><CornerUpLeft className="h-4 w-4" /></span>}
                   {/* No tails: a run of messages stacks, with tighter corners on the side they come from. */}
@@ -279,9 +342,9 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
                       if ((e.target as Element).closest("a, button, input, audio, video, img, [role=slider]") || (window.getSelection()?.toString() ?? "")) return;
                       setMenu({ m, x: e.clientX, y: e.clientY });
                     }}
-                    className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] text-[15px] leading-[1.4] sm:max-w-[68%]",
+                    className={cn("relative max-w-[80%] cursor-pointer rounded-[18px] text-[15px] leading-[20px] sm:max-w-[65%] sm:text-[14.2px] sm:leading-[19px]",
                     // Photos and videos sit edge to edge in a thin frame; alone, they drop the bubble entirely. Documents get a snug frame.
-                    kind === "media-only" ? "p-0" : kind === "media" || kind === "doc" ? "p-[3px]" : "px-3 pb-[7px] pt-[7px]",
+                    kind === "media-only" ? "p-0" : kind === "media" || kind === "doc" ? "p-[3px]" : "pb-[8px] pl-[9px] pr-[7px] pt-[6px]",
                     // A deleted message is a quiet placeholder: an outline, no colour fill (mine or theirs).
                     m.deleted ? "bg-[rgb(var(--chat-bg)/0.6)] text-ink-muted ring-1 ring-inset ring-overlay/10 backdrop-blur-[6px]" : kind === "media-only" ? "text-ink" : mine ? "bubble-mine" : "bubble-theirs text-ink",
                     mine ? [!startsRun && "rounded-tr-[6px]", !endsRun && "rounded-br-[6px]"] : [!startsRun && "rounded-tl-[6px]", !endsRun && "rounded-bl-[6px]"])}>
@@ -312,7 +375,7 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
                     </div>
                     <span className={cn("pointer-events-none absolute flex items-center gap-1 text-[11px] tabular-nums leading-none",
                       // on a bare photo/video: a small dark glass pill over the picture (top-right on video, clear of its controls)
-                      kind === "media-only" ? ["right-2 rounded-full bg-black/40 px-2 py-1 text-white backdrop-blur-md", att && isVideo(att.type) ? "top-2" : "bottom-2"] : [kind === "doc" && !(p && "text" in p && p.text) ? "bottom-[5px] right-3" : "bottom-[7px] right-3", mine && !m.deleted ? "text-white/75" : "text-ink-faint"])}>
+                      kind === "media-only" ? ["right-2 rounded-full bg-black/40 px-2 py-1 text-white backdrop-blur-md", att && isVideo(att.type) ? "top-2" : "bottom-2"] : [kind === "doc" && !(p && "text" in p && p.text) ? "bottom-[5px] right-3" : kind ? "bottom-[7px] right-3" : "bottom-[6px] right-2", mine && !m.deleted ? "text-white/75" : "text-ink-faint"])}>
                       {clockOf(m.createdAt)}
                       {state && !m.deleted && <Ticks state={state} onBrand />}
                       {state === "failed" && <AlertCircle className="h-3.5 w-3.5 text-accent-extreme" aria-label="Not sent" />}
@@ -329,7 +392,7 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
                     </button>
                     {state === "failed" && <button type="button" onClick={() => onRetry(m)} className="mt-1 block px-1 text-xs font-semibold text-white underline underline-offset-2">Not sent. Tap to retry</button>}
                   </div>
-                </div>
+                </div>)}
               </Fragment>
             );
           })}
@@ -342,14 +405,24 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
         </div>
         {!atBottom && (
           <button type="button" onClick={() => { toBottom(true); setUnseen(0); }} aria-label="Scroll to the newest message"
-            style={{ bottom: footH + 16 }} className="pw-float absolute right-4 flex h-10 w-10 items-center justify-center rounded-full text-brand">
-            <ChevronDown className="h-5 w-5" strokeWidth={2.25} />
-            {unseen > 0 && <span className="absolute -top-1.5 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1 text-[11px] font-semibold text-white">{unseen}</span>}
+            style={{ bottom: footH + 16 }} className="pw-corner !absolute right-4 z-10 !h-8 !w-8 !text-brand">
+            {/* the same liquid glass as the header and avatar buttons, compact */}
+            <span className="pw-corner-lg" aria-hidden><LiquidGlass width="100%" height="100%" radius={16} blur={4} /></span>
+            <ChevronDown className="h-4 w-4" strokeWidth={2.5} />
+            {unseen > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold leading-none text-white">{unseen}</span>}
           </button>
         )}
       </div>
 
       <div ref={foot} className="relative z-20 shrink-0" style={{ marginTop: -footH }}>
+      {sel ? (
+        <div className="pw-bar pw-bar-see flex items-center gap-2 border-t border-overlay/10 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4">
+          <button type="button" onClick={() => setSel(null)} className="h-9 rounded-full px-3 text-[15px] font-medium text-brand transition-colors hover:bg-overlay/[0.06]">Cancel</button>
+          <span className="flex-1 text-center text-[15px] font-semibold text-ink">{sel.length ? `${sel.length} selected` : "Select items"}</span>
+          <button type="button" disabled={!sel.length} onClick={() => setDelSel(true)}
+            className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[15px] font-semibold text-[#F2453D] transition-colors enabled:hover:bg-[#F2453D]/10 disabled:opacity-35"><Trash2 className="h-[17px] w-[17px]" />Delete</button>
+        </div>
+      ) : (<>
       {(!hasKey || waitingFor) && (
         <div className="pw-bar pw-bar-see flex shrink-0 items-start gap-2 border-t border-overlay/10 px-4 py-2 text-xs text-ink-muted">
           <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-fast" />
@@ -370,6 +443,7 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
         onCancelReply={() => setReply(null)} onTyping={onTyping}
         onSend={async (t, f) => { const r = reply?.id ?? null; setReply(null); await onSend(t, r, f); requestAnimationFrame(() => toBottom(true)); }} />
       )}
+      </>)}
       </div>
 
       {menu && (
@@ -377,8 +451,41 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
           onForward={onForward && !menu.m.deleted && (() => { const p = plain[menu.m.id]; return !!p && "text" in p && (!!p.text || !!p.file); })() ? () => { setForwarding(menu.m); setMenu(null); } : undefined} canCopy={(() => { const p = plain[menu.m.id]; return !!p && "text" in p && !!p.text; })()} onClose={() => setMenu(null)}
           onReply={() => { setReply(menu.m); setMenu(null); }}
           onCopy={() => { const p = plain[menu.m.id]; if (p && "text" in p) void navigator.clipboard?.writeText(p.text).then(onCopied, () => undefined); setMenu(null); }}
+          onSelect={() => { setSel([menu.m.id]); setReply(null); setMenu(null); }}
           onDelete={() => { setDelMsg(menu.m); setMenu(null); }} />
       )}
+      {cardMenu && (() => {
+        const c = cardMenu.row.call, can = !isGroup && !!onCall && !conv.blockedByMe;
+        return (
+          <ActionMenu x={cardMenu.x} y={cardMenu.y} onClose={() => setCardMenu(null)} items={[
+            ...(can ? [{ label: c.video ? "Video call back" : "Call back", icon: c.video ? Video : Phone, run: () => onCall?.(c.video) }] : []),
+            { label: "Select", icon: CircleCheck, run: () => { setSel([cardMenu.row.id]); setReply(null); } },
+            { label: "Delete", icon: Trash2, danger: true, run: () => setDelCall(cardMenu.row) },
+          ]} />
+        );
+      })()}
+      {delCall && (
+        <DeleteDialog title="Delete this call?" body="It will be removed from your call history. The other person keeps theirs."
+          me={{ label: "Delete", run: () => removeCalls([delCall.call.id]) }} onClose={() => setDelCall(null)} />
+      )}
+      {delSel && sel && (() => {
+        const msgs = items.filter((x) => sel.includes(x.id));
+        const callIds = rows.filter((r): r is CallRow => r.kind === "call" && sel.includes(r.id)).map((r) => r.call.id);
+        const parts = [msgs.length && `${msgs.length} message${msgs.length > 1 ? "s" : ""}`, callIds.length && `${callIds.length} call${callIds.length > 1 ? "s" : ""}`].filter(Boolean).join(" and ");
+        // "for everyone" only when every pick is a message I sent that is still there (as WhatsApp)
+        const allMine = !callIds.length && msgs.length > 0 && msgs.every((x) => x.senderId === me && !x.deleted && !x.status);
+        const run = async (scope: "me" | "everyone") => {
+          for (const x of msgs) await onDelete(x, scope);
+          if (callIds.length) await removeCalls(callIds);
+          setSel(null);
+        };
+        return (
+          <DeleteDialog title={`Delete ${parts}?`} onClose={() => setDelSel(false)}
+            body={allMine ? "They will be removed from your chat." : "They will be removed from this chat for you only. Others keep their copies."}
+            me={{ label: "Delete", run: () => run("me") }}
+            everyone={allMine ? { label: "Delete for Everyone", hint: "The messages will be removed for all participants and replaced with “This message was deleted.”", confirm: "Delete for All", run: () => run("everyone") } : undefined} />
+        );
+      })()}
       {forwarding && onForward && (() => {
         const p = plain[forwarding.id];
         if (!p || !("text" in p)) return null;
@@ -395,7 +502,7 @@ export function ChatWindow({ conv, chats = [], onForward, me, thread, plain, typ
   );
 }
 
-function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onForward, onDelete }: { x: number; y: number; deleted: boolean; canCopy: boolean; onClose: () => void; onReply: () => void; onCopy: () => void; onForward?: () => void; onDelete: () => void }) {
+function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onForward, onSelect, onDelete }: { x: number; y: number; deleted: boolean; canCopy: boolean; onClose: () => void; onReply: () => void; onCopy: () => void; onForward?: () => void; onSelect?: () => void; onDelete: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   useLayoutEffect(() => {
@@ -416,9 +523,107 @@ function MessageMenu({ x, y, deleted, canCopy, onClose, onReply, onCopy, onForwa
       {!deleted && <button role="menuitem" className="pw-mi" onClick={onReply}>Reply<CornerUpLeft /></button>}
       {onForward && <button role="menuitem" className="pw-mi" onClick={onForward}>Forward<Forward /></button>}
       {canCopy && <button role="menuitem" className="pw-mi" onClick={onCopy}>Copy<Copy /></button>}
+      {onSelect && <button role="menuitem" className="pw-mi" onClick={onSelect}>Select<CircleCheck /></button>}
       <button role="menuitem" className="pw-mi pw-mi-danger" onClick={onDelete}>Delete<Trash2 /></button>
     </div>,
     document.body,
+  );
+}
+
+/** A short menu of actions, styled and placed like the message menu (stays on screen; Esc or a tap outside closes). */
+function ActionMenu({ x, y, items, onClose }: { x: number; y: number; items: { label: string; icon: typeof Phone; danger?: boolean; run: () => void }[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    setPos({ left: Math.max(8, Math.min(x, window.innerWidth - el.offsetWidth - 8)), top: Math.max(8, Math.min(y, window.innerHeight - el.offsetHeight - 8)) });
+  }, [x, y]);
+  useEffect(() => {
+    const down = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("pointerdown", down);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
+  }, [onClose]);
+  return createPortal(
+    <div ref={ref} role="menu" className="pw-menu glass-in fixed z-[130] w-56 overflow-hidden rounded-[14px]" style={pos}>
+      {items.map(({ label, icon: Icon, danger, run }) => (
+        <button key={label} role="menuitem" className={cn("pw-mi", danger && "pw-mi-danger")} onClick={() => { onClose(); run(); }}>{label}<Icon /></button>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
+/** A call in the timeline: kept apart from messages, so it never joins a run of bubbles. */
+type CallRow = { id: string; kind: "call"; createdAt: string; senderId: string; call: CallLogEntry };
+
+/** "45 sec", "3 min", "1 hr 5 min": how long an answered call lasted, as WhatsApp writes it. */
+function callLength(s: number) {
+  if (s < 60) return `${Math.max(1, s)} sec`;
+  const m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h ? `${h} hr${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+}
+
+/**
+ * A call in the chat: one quiet bubble on the caller's side. A tinted badge says what kind of call (red when missed),
+ * the title and time share the top line, the detail (length, "No answer", "Declined") sits under it, and a round
+ * call-back button on the right starts the same kind of call (one-to-one chats), so a stray tap on the card never dials.
+ */
+function CallCard({ call: c, canCall, onCall, first, onMenu, fresh }: { call: CallLogEntry; canCall: boolean; onCall?: (video: boolean) => void; first: boolean; onMenu?: (x: number, y: number) => void; fresh?: boolean }) {
+  const out = c.direction === "out";
+  const missed = !out && (c.outcome === "missed" || c.outcome === "unanswered" || c.outcome === "cancelled");
+  const what = c.video ? "video call" : "voice call";
+  const title = missed ? `Missed ${what}` : c.video ? "Video call" : "Voice call";
+  const sub = c.outcome === "answered" ? `${out ? "Outgoing" : "Incoming"} · ${callLength(c.seconds)}`
+    : missed ? "Incoming" : c.outcome === "declined" ? "Declined" : c.outcome === "busy" ? "Busy" : out ? "No answer" : "Not answered";
+  // the badge: the kind of call, with a small direction arrow on its corner (as on the Calls tab):
+  // red when missed, green when it was answered, grey when it wasn't (declined, no answer, busy)
+  const Kind = c.video ? Video : Phone;
+  const Dir = out ? ArrowUpRight : ArrowDownLeft;
+  const tone = missed ? "missed" : c.outcome === "answered" ? "answered" : "quiet";
+  const Back = c.video ? Video : Phone;
+  return (
+    <div className={cn("group relative flex [-webkit-touch-callout:none] [@media(hover:none)]:select-none", out ? "justify-end" : "justify-start", first ? "mt-3" : "mt-0.5", fresh && "fade-in")}
+      onContextMenu={(e) => { e.preventDefault(); onMenu?.(e.clientX, e.clientY); }}
+      {...(onMenu ? gestures(onMenu, null) : {})}>
+      <div role="group" aria-label={`${title}, ${sub}, ${clockOf(c.startedAt)}`}
+        onClick={(e) => { if (onMenu && !(e.target as Element).closest("button")) onMenu(e.clientX, e.clientY); }}
+        className={cn("relative flex w-[min(300px,78vw)] items-center gap-3 rounded-[18px] py-2.5 pl-2.5 pr-2.5", onMenu && "cursor-pointer", out ? "bubble-mine" : "bubble-theirs text-ink")}>
+        <span className={cn("relative grid h-10 w-10 shrink-0 place-items-center rounded-full",
+          out ? "bg-white/20 text-white" : missed ? "bg-[rgb(var(--missed)/0.12)] text-[rgb(var(--missed))]" : "bg-brand/10 text-brand")}>
+          <Kind className="h-[18px] w-[18px]" strokeWidth={2.1} />
+          <span aria-hidden className={cn("absolute -bottom-[3px] -right-[3px] grid h-[18px] w-[18px] place-items-center rounded-full ring-2",
+            out ? "bg-white text-[var(--mine-mid,#0B7F79)] ring-[var(--mine-mid,#0B7F79)]" : "ring-[rgb(var(--bubble-in))] text-white",
+            !out && (tone === "missed" ? "bg-[rgb(var(--missed))]" : tone === "answered" ? "bg-[rgb(var(--tick-read))]" : "bg-[rgb(var(--ink-muted))]"))}>
+            <Dir className="h-[11px] w-[11px]" strokeWidth={3} />
+          </span>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline gap-2">
+            <span className={cn("min-w-0 flex-1 truncate text-[15px] font-semibold leading-5 tracking-[-0.01em] sm:text-[14.5px]",
+              out ? "text-white" : "text-ink")}>{title}</span>
+            <span className={cn("shrink-0 text-[11px] tabular-nums", out ? "text-white/70" : "text-ink-faint")}>{clockOf(c.startedAt)}</span>
+          </span>
+          <span className={cn("mt-0.5 block truncate text-[13px] leading-[18px]", out ? "text-white/75" : "text-ink-muted")}>{sub}</span>
+        </span>
+        {canCall && (
+          <button type="button" onClick={() => onCall?.(c.video)} aria-label={c.video ? "Video call back" : "Call back"} title={c.video ? "Video call back" : "Call back"}
+            className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full transition-[transform,background-color] active:scale-90",
+              out ? "bg-white/20 text-white hover:bg-white/30" : "bg-overlay/[0.06] text-brand hover:bg-overlay/[0.1]")}>
+            <Back className="h-[17px] w-[17px]" strokeWidth={2.2} />
+          </button>
+        )}
+        {onMenu && (
+          <button type="button" aria-label="Call options" title="More" aria-haspopup="menu"
+            onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); onMenu(out ? r.right - 224 : r.left, r.bottom + 6); }}
+            className={cn("absolute top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-overlay/10 text-ink-muted opacity-0 outline-none transition-opacity hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:hidden",
+              out ? "-left-9" : "-right-9")}>
+            <ChevronDown className="h-4 w-4" strokeWidth={2.25} />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -756,7 +961,7 @@ function Attachment({ file, conversationId, mine, sending, edge }: { file: Plain
         <button type="button" onClick={() => url && setView(true)} aria-label={`Open ${file.name}`} className={cn("relative block w-fit overflow-hidden bg-overlay/[0.06]", edge)}>
           {url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt={file.name} className={cn("block max-h-[340px] min-h-[110px] w-auto min-w-[150px] max-w-[min(300px,68vw)] object-cover", sending && "opacity-70")} />
+            <img src={url} alt={file.name} className={cn("block max-h-[330px] min-h-[110px] w-auto min-w-[150px] max-w-[min(330px,68vw)] object-cover", sending && "opacity-70")} />
           ) : (
             <span className={cn("flex h-[200px] w-[min(260px,62vw)] items-center justify-center text-xs", mine ? "text-ink-muted" : "text-ink-muted")}>
               {failed ? "Couldn't load this photo" : <ButtonWheel size={18} />}
@@ -770,7 +975,7 @@ function Attachment({ file, conversationId, mine, sending, edge }: { file: Plain
   }
   if (video) return <VideoClip url={url} failed={failed} sending={sending} size={file.size} edge={edge} />;
   return (
-    <div className={cn("flex w-[min(300px,70vw)] items-center gap-3 rounded-[15px] p-2.5", mine ? "bg-white/[0.14]" : "bg-overlay/[0.05]")}>
+    <div className={cn("flex w-[min(330px,70vw)] items-center gap-3 rounded-[15px] p-2.5", mine ? "bg-white/[0.14]" : "bg-overlay/[0.05]")}>
       <button type="button" onClick={() => void openDoc()} disabled={!file.id || busy} aria-label={pdf ? `Open ${file.name}` : `Save ${file.name}`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         {/* a small page in the file type's colour, like Files/Finder */}
         <span className="relative flex h-12 w-10 shrink-0 items-end justify-center overflow-hidden rounded-[8px] pb-1.5 text-[9px] font-bold tracking-wide text-white shadow-[0_1px_2px_rgba(0,0,0,0.18)]" style={{ background: kindColor(file.name, file.type) }}>
@@ -801,11 +1006,11 @@ function VideoClip({ url, failed, sending, size, edge }: { url: string | null; f
   const [dur, setDur] = useState(0);
   const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   return (
-    <div className={cn("relative w-[min(280px,66vw)] overflow-hidden bg-black", edge)}>
+    <div className={cn("relative w-[min(330px,66vw)] overflow-hidden bg-black", edge)}>
       {url ? (
         <video ref={ref} src={`${url}#t=0.1`} preload="metadata" playsInline controls={playing}
           onLoadedMetadata={(e) => setDur(e.currentTarget.duration || 0)} onEnded={() => setPlaying(false)}
-          className="block max-h-[340px] min-h-[150px] w-full object-cover" />
+          className="block max-h-[330px] min-h-[150px] w-full object-cover" />
       ) : (
         <div className="grid aspect-video w-full place-items-center text-xs text-white/70">{failed ? "Couldn't load this video" : <ButtonWheel size={18} />}</div>
       )}
@@ -924,9 +1129,9 @@ function VoiceNote({ file, conversationId, mine, sending }: { file: PlainFile; c
   const on = mine ? "bg-white" : "bg-brand";
   const off = mine ? "bg-white/40" : "bg-ink-faint/60";
   return (
-    <div className="mb-[-2px] flex w-[230px] max-w-full items-center gap-2.5 pt-0.5">
+    <div className="mb-[-2px] flex w-[min(280px,62vw)] max-w-full items-center gap-3 py-0.5 sm:w-[300px]">
       <button type="button" onClick={toggle} disabled={!ready || sending} aria-label={playing ? "Pause voice message" : "Play voice message"}
-        className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full transition-transform active:scale-90 disabled:opacity-50", mine ? "bg-white text-brand" : "bg-brand text-white")}>
+        className={cn("grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full transition-transform active:scale-90 disabled:opacity-50", mine ? "bg-white text-brand" : "bg-brand text-white")}>
         {!url && !failed ? <ButtonWheel size={14} /> : playing ? <Pause className="h-4 w-4" fill="currentColor" strokeWidth={0} /> : <Play className="ml-0.5 h-4 w-4" fill="currentColor" strokeWidth={0} />}
       </button>
       <div className="min-w-0 flex-1">

@@ -115,6 +115,8 @@ export const chatApi = {
   /** Opened from an incoming-call push: the ring this device missed while Palk was closed. */
   pendingRing: (callId: string) => api<{ ring: { conversationId: string; from: string; video: boolean; sdp: string; kind: "offer" | "invite"; people?: CallPerson[]; ice: Record<string, RTCIceCandidateInit[]> } | null }>(`/chat/calls/${encodeURIComponent(callId)}/pending`),
   clearCalls: () => api<void>("/chat/calls", { method: "DELETE" }),
+  /** Delete some calls from my history (other people keep theirs). */
+  deleteCalls: (ids: string[]) => api<void>("/chat/calls/delete", { method: "POST", body: { ids } }),
   /** Status: mine and my contacts' (24-hour updates). */
   statuses: () => api<{ mine: StatusItem[]; others: StatusGroup[] }>("/chat/status"),
   postStatus: (body: { kind: "text"; text: string; bg: string } | { kind: "photo"; image: string; text?: string }) => api<StatusItem>("/chat/status", { method: "POST", body }),

@@ -19,7 +19,7 @@ export const WALLPAPERS = [
 export type Look = { bubble: (typeof BUBBLES)[number]["id"]; wallpaper: (typeof WALLPAPERS)[number]["id"] };
 
 const KEY = "pacewise-chat-look";
-export const DEFAULT_LOOK: Look = { bubble: "blue", wallpaper: "doodles" };
+export const DEFAULT_LOOK: Look = { bubble: "teal", wallpaper: "doodles" };
 
 export function loadLook(): Look {
   try {
