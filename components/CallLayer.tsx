@@ -1032,6 +1032,8 @@ export const CallLayer = forwardRef<
     : [];
   const canAdd = call?.phase === "active" && list.length + 1 < MAX_PEOPLE;
 
+  /** The app's light theme: dark text on the call screen's (chat) background; dark theme keeps it white. */
+  const lightTheme = typeof document !== "undefined" && document.documentElement.dataset.theme === "light";
   /** The call buttons (the same everywhere): Decline / Accept while it rings; Mute, Camera, Switch, Add and End in a call. */
   const controls = () => !call ? null : (
     <>
@@ -1136,7 +1138,7 @@ export const CallLayer = forwardRef<
             role="dialog"
             aria-modal="true"
             aria-label={`${call.video ? "Video" : "Audio"} call with ${title}`}
-            className={cn("pw-call fade-in fixed inset-0 z-[200] flex flex-col items-center justify-between overflow-hidden text-white", group ? "p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]" : "px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))]", !showRemote && !myFull && !group && "pw-call-light")}
+            className={cn("pw-call fade-in fixed inset-0 z-[200] flex flex-col items-center justify-between overflow-hidden text-white", group ? "p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))]" : "px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(3.5rem,env(safe-area-inset-top))]", !showRemote && !myFull && !group && lightTheme && "pw-call-light")}
           >
             {/*
               The backdrop: a light grey doodle wallpaper (see .pw-call-paper / .pw-call-doodle). Under everything else,
@@ -1147,10 +1149,7 @@ export const CallLayer = forwardRef<
                 {group ? (
                   <div className="pw-call-group absolute inset-0" />
                 ) : (
-                  <>
-                    <div className="pw-call-paper absolute inset-0" />
-                    <div className="pw-call-doodle absolute inset-0" />
-                  </>
+                  <div className="pw-call-chatbg absolute inset-0" />
                 )}
               </div>
             )}

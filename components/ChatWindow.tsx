@@ -92,6 +92,15 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
   const self = !isGroup && other?.id === me;
   const items = thread?.items ?? [];
   const scroller = useRef<HTMLDivElement>(null);
+  // The bottom bars float over the wallpaper; their height pads the scroller so the last message clears them.
+  const foot = useRef<HTMLDivElement>(null);
+  const [footH, setFootH] = useState(64);
+  useLayoutEffect(() => {
+    const el = foot.current; if (!el) return;
+    const ro = new ResizeObserver(() => setFootH(el.offsetHeight));
+    ro.observe(el); setFootH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const [reply, setReply] = useState<Message | null>(null);
@@ -172,7 +181,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="pw-bar relative z-20 flex h-16 shrink-0 items-center gap-2 border-b border-overlay/10 px-2 sm:px-4">
+      <header className="pw-bar pw-bar-see relative z-20 -mb-16 flex h-16 shrink-0 items-center gap-2 border-b border-overlay/10 px-2 sm:px-4">
         <button type="button" onClick={onBack} aria-label="Back to chats" className="flex h-10 w-9 items-center justify-center rounded-full text-brand md:hidden"><ChevronLeft className="h-7 w-7" strokeWidth={2.25} /></button>
         <button type="button" onClick={onInfo} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={isGroup ? "Group info" : "Contact info"}>
           <Avatar id={isGroup ? conv.id : other?.id ?? conv.id} name={titleOf(conv, me)} url={other?.avatarUrl} group={isGroup} size={40} />
@@ -224,7 +233,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
       </header>
 
       <div className="chat-aurora relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={() => void onScroll()} className="chat-wallpaper thin-scroll absolute inset-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-6">
+        <div ref={scroller} onScroll={() => void onScroll()} style={{ paddingBottom: footH + 12 }} className="chat-wallpaper thin-scroll absolute inset-0 overflow-y-auto overflow-x-hidden px-3 pt-[4.75rem] sm:px-6">
           {/* One centred reading column on wide screens, so a conversation never stretches edge to edge. */}
           <div className="mx-auto w-full max-w-[860px]">
           {!thread?.loaded && <div className="flex justify-center py-10 text-ink-muted"><ButtonWheel size={22} /></div>}
@@ -266,7 +275,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
                     }}
                     className={cn("relative max-w-[82%] cursor-pointer rounded-[18px] px-3 pb-[7px] pt-[7px] text-[15px] leading-[1.4] sm:max-w-[68%]",
                     // A deleted message is a quiet placeholder: an outline, no colour fill (mine or theirs).
-                    m.deleted ? "bg-overlay/[0.06] text-ink-muted" : mine ? "bubble-mine" : "bubble-theirs text-ink",
+                    m.deleted ? "bg-[rgb(var(--chat-bg)/0.6)] text-ink-muted ring-1 ring-inset ring-overlay/10 backdrop-blur-[6px]" : mine ? "bubble-mine" : "bubble-theirs text-ink",
                     mine ? [!startsRun && "rounded-tr-[6px]", !endsRun && "rounded-br-[6px]"] : [!startsRun && "rounded-tl-[6px]", !endsRun && "rounded-bl-[6px]"])}>
                     {isGroup && !mine && startsRun && <p className="mb-0.5 px-1 text-[13px] font-medium" style={{ color: nameColor(m.senderId) }}>{nameOf(conv.members, m.senderId, me)}</p>}
                     {quoted && (
@@ -321,15 +330,16 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
         </div>
         {!atBottom && (
           <button type="button" onClick={() => { toBottom(true); setUnseen(0); }} aria-label="Scroll to the newest message"
-            className="pw-float absolute bottom-4 right-4 flex h-10 w-10 items-center justify-center rounded-full text-brand">
+            style={{ bottom: footH + 16 }} className="pw-float absolute right-4 flex h-10 w-10 items-center justify-center rounded-full text-brand">
             <ChevronDown className="h-5 w-5" strokeWidth={2.25} />
             {unseen > 0 && <span className="absolute -top-1.5 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-brand px-1 text-[11px] font-semibold text-white">{unseen}</span>}
           </button>
         )}
       </div>
 
+      <div ref={foot} className="relative z-20 shrink-0" style={{ marginTop: -footH }}>
       {(!hasKey || waitingFor) && (
-        <div className="pw-bar flex shrink-0 items-start gap-2 border-t border-overlay/10 px-4 py-2 text-xs text-ink-muted">
+        <div className="pw-bar pw-bar-see flex shrink-0 items-start gap-2 border-t border-overlay/10 px-4 py-2 text-xs text-ink-muted">
           <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-fast" />
           {!hasKey
             ? "Waiting for this chat's encryption key. It arrives as soon as another member opens Palk."
@@ -339,7 +349,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
 
       {conv.blockedByMe ? (
         /* Blocked: no message box, just what happened and the way back. */
-        <div className="pw-bar flex shrink-0 flex-col items-center gap-1 border-t border-overlay/10 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-center">
+        <div className="pw-bar pw-bar-see flex shrink-0 flex-col items-center gap-1 border-t border-overlay/10 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-center">
           <p className="text-[14px] text-ink-muted">You blocked {titleOf(conv, me)}.</p>
           {onBlock && <button type="button" onClick={() => onBlock(false)} className="text-[15px] font-semibold text-brand">Tap to unblock</button>}
         </div>
@@ -348,6 +358,7 @@ export function ChatWindow({ conv, me, thread, plain, typing, hasKey, onBack, on
         onCancelReply={() => setReply(null)} onTyping={onTyping}
         onSend={async (t, f) => { const r = reply?.id ?? null; setReply(null); await onSend(t, r, f); requestAnimationFrame(() => toBottom(true)); }} />
       )}
+      </div>
 
       {menu && (
         <MessageMenu x={menu.x} y={menu.y} deleted={menu.m.deleted} canCopy={(() => { const p = plain[menu.m.id]; return !!p && "text" in p && !!p.text; })()} onClose={() => setMenu(null)}
@@ -532,7 +543,7 @@ function Composer({ disabled, reply, replyName, replyText, onCancelReply, onSend
   };
 
   return (
-    <div className="pw-bar shrink-0 border-t border-overlay/10 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 group-data-[kb]/app:pb-2 sm:px-4">
+    <div className="pw-bar pw-bar-see shrink-0 border-t border-overlay/10 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 group-data-[kb]/app:pb-2 sm:px-4">
       {attached && (
         <div className="mb-2 flex items-center gap-3 rounded-2xl bg-brand/[0.07] p-2.5">
           {isImage(attached.type) ? <LocalThumb file={attached} /> : <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand text-white"><FileText className="h-5 w-5" /></span>}
